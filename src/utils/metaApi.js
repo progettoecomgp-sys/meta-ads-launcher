@@ -454,13 +454,10 @@ export async function createVideoCreative(token, accountId, {
     link_description: description || '',
     message: message || '',
     title: headline || '',
-    link_url: linkUrl,
+    call_to_action: { type: cta || 'LEARN_MORE', value: { link: linkUrl } },
   };
   if (imageHash) {
     videoData.image_hash = imageHash;
-  }
-  if (cta && cta !== 'NO_BUTTON') {
-    videoData.call_to_action = { type: cta, value: { link: linkUrl } };
   }
 
   const objectStorySpec = {
