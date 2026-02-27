@@ -137,6 +137,7 @@ export default function Upload() {
   const [launching, setLaunching] = useState(false);
   const [launchProgress, setLaunchProgress] = useState({ step: '', progress: 0, total: 0 });
   const [adStatus, setAdStatus] = useState('PAUSED');
+  const [previewIndex, setPreviewIndex] = useState(0);
 
   // Country presets (localStorage)
   const PRESETS_KEY = 'meta-ads-country-presets';
@@ -809,7 +810,7 @@ export default function Upload() {
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-text-secondary mb-1">Primary Text</label>
-                <textarea rows={3} value={globalCopy.primaryText} onChange={(e) => setGlobalCopy({ ...globalCopy, primaryText: e.target.value })} className={`${inputCls} resize-none`} placeholder="Write your ad text..." />
+                <textarea rows={5} value={globalCopy.primaryText} onChange={(e) => setGlobalCopy({ ...globalCopy, primaryText: e.target.value })} className={`${inputCls} resize-y`} placeholder="Write your ad text..." />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -901,24 +902,54 @@ export default function Upload() {
             {/* Ad Preview */}
             {files.length > 0 && (
               <div className="bg-white rounded-xl border border-border p-5">
-                <h2 className="text-sm font-semibold mb-4">Anteprima</h2>
-                <AdPreview
-                  file={creativeType !== 'carousel' ? files[0]?.file : undefined}
-                  files={creativeType === 'carousel' ? files.map((f) => f.file) : undefined}
-                  isCarousel={creativeType === 'carousel'}
-                  cards={creativeType === 'carousel' ? files.map((f) => ({
-                    file: f.file,
-                    headline: f.useCustomCopy ? f.headline : globalCopy.headline,
-                    description: f.useCustomCopy ? f.description : globalCopy.description,
-                    cta: f.useCustomCopy ? f.cta : globalCopy.cta,
-                  })) : undefined}
-                  primaryText={files[0]?.useCustomCopy ? files[0].primaryText : globalCopy.primaryText}
-                  headline={files[0]?.useCustomCopy ? files[0].headline : globalCopy.headline}
-                  description={files[0]?.useCustomCopy ? files[0].description : globalCopy.description}
-                  cta={files[0]?.useCustomCopy ? files[0].cta : globalCopy.cta}
-                  pageName={pages.find((p) => p.id === selectedPage)?.name || 'Your Page'}
-                  websiteUrl={websiteUrl}
-                />
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-sm font-semibold">Anteprima</h2>
+                  {/* Creative selector for single ads */}
+                  {creativeType === 'single' && files.length > 1 && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewIndex(Math.max(0, previewIndex - 1))}
+                        disabled={previewIndex === 0}
+                        className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-bg disabled:opacity-30 transition-colors"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                      </button>
+                      <span className="text-xs text-text-secondary font-medium min-w-[3ch] text-center">{previewIndex + 1}/{files.length}</span>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewIndex(Math.min(files.length - 1, previewIndex + 1))}
+                        disabled={previewIndex >= files.length - 1}
+                        className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-bg disabled:opacity-30 transition-colors"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {(() => {
+                  const idx = creativeType === 'single' ? Math.min(previewIndex, files.length - 1) : 0;
+                  const previewFile = files[idx];
+                  return (
+                    <AdPreview
+                      file={creativeType !== 'carousel' ? previewFile?.file : undefined}
+                      files={creativeType === 'carousel' ? files.map((f) => f.file) : undefined}
+                      isCarousel={creativeType === 'carousel'}
+                      cards={creativeType === 'carousel' ? files.map((f) => ({
+                        file: f.file,
+                        headline: f.useCustomCopy ? f.headline : globalCopy.headline,
+                        description: f.useCustomCopy ? f.description : globalCopy.description,
+                        cta: f.useCustomCopy ? f.cta : globalCopy.cta,
+                      })) : undefined}
+                      primaryText={previewFile?.useCustomCopy ? previewFile.primaryText : globalCopy.primaryText}
+                      headline={previewFile?.useCustomCopy ? previewFile.headline : globalCopy.headline}
+                      description={previewFile?.useCustomCopy ? previewFile.description : globalCopy.description}
+                      cta={previewFile?.useCustomCopy ? previewFile.cta : globalCopy.cta}
+                      pageName={pages.find((p) => p.id === selectedPage)?.name || 'Your Page'}
+                      websiteUrl={websiteUrl}
+                    />
+                  );
+                })()}
               </div>
             )}
           </div>

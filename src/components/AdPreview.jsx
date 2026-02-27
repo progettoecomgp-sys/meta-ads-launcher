@@ -27,6 +27,7 @@ function CardMedia({ file }) {
 export default function AdPreview({ file, files, primaryText, headline, description, cta, pageName, websiteUrl, isCarousel, cards }) {
   const [placement, setPlacement] = useState('feed');
   const [activeCard, setActiveCard] = useState(0);
+  const [textExpanded, setTextExpanded] = useState(false);
   const scrollRef = useRef(null);
 
   const domain = (() => {
@@ -96,7 +97,17 @@ export default function AdPreview({ file, files, primaryText, headline, descript
           {/* Primary text */}
           {primaryText && (
             <div className="px-3 pb-2">
-              <p className="text-xs leading-relaxed whitespace-pre-wrap line-clamp-3">{primaryText}</p>
+              <p className={`text-xs leading-relaxed whitespace-pre-wrap ${!textExpanded ? 'line-clamp-3' : ''}`}>{primaryText}</p>
+              {!textExpanded && primaryText.length > 120 && (
+                <button type="button" onClick={() => setTextExpanded(true)} className="text-xs text-text-secondary hover:text-text font-medium">
+                  ...altro
+                </button>
+              )}
+              {textExpanded && (
+                <button type="button" onClick={() => setTextExpanded(false)} className="text-xs text-text-secondary hover:text-text font-medium">
+                  mostra meno
+                </button>
+              )}
             </div>
           )}
 
@@ -240,7 +251,7 @@ export default function AdPreview({ file, files, primaryText, headline, descript
           {/* Bottom CTA */}
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3 pt-8">
             {primaryText && (
-              <p className="text-white text-[10px] leading-relaxed mb-2 line-clamp-2">{primaryText}</p>
+              <p className={`text-white text-[10px] leading-relaxed mb-2 ${!textExpanded ? 'line-clamp-2' : ''}`}>{primaryText}</p>
             )}
             {(() => {
               const activeCta = isCarousel && carouselCards[activeCard]?.cta ? carouselCards[activeCard].cta : cta;
