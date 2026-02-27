@@ -1,0 +1,26 @@
+# fly.toml app configuration file generated for meta-ads-launcher on 2026-02-27T18:35:24+01:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'meta-ads-launcher'
+primary_region = 'fra'
+
+[build]
+  [build.args]
+    VITE_SUPABASE_URL = "https://hmrjogyixuosihaopzac.supabase.co"
+    VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtcmpvZ3lpeHVvc2loYW9wemFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyMTExMTAsImV4cCI6MjA4Nzc4NzExMH0.ukyiDgfcX2DLv65W5VC4wl8dNw4ATYQJTopimZ-eKyA"
+
+[http_service]
+  internal_port = 80
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 1024
