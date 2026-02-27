@@ -262,7 +262,7 @@ export async function createCampaign(token, accountId, { name, objective, status
 // Create ad set
 export async function createAdSet(token, accountId, {
   name, campaignId, dailyBudget, optimizationGoal, billingEvent,
-  countries, excludedCountries, ageMin, ageMax, gender, status, startTime, budgetType, pixelId,
+  countries, excludedCountries, excludedRegions, ageMin, ageMax, gender, status, startTime, budgetType, pixelId,
   conversionEvent, bidAmount, bidStrategy, budgetSharing, attributionSetting, dailyMinSpend, dailySpendCap,
   dsaBeneficiary, dsaPayor,
 }) {
@@ -273,6 +273,10 @@ export async function createAdSet(token, accountId, {
   };
   if (excludedCountries && excludedCountries.length > 0) {
     targeting.excluded_geo_locations = { countries: excludedCountries };
+  }
+  if (excludedRegions && excludedRegions.length > 0) {
+    if (!targeting.excluded_geo_locations) targeting.excluded_geo_locations = {};
+    targeting.excluded_geo_locations.regions = excludedRegions.map((r) => ({ key: r.key }));
   }
   if (gender && gender !== 'all') {
     targeting.genders = gender === 'male' ? [1] : [2];
@@ -601,6 +605,20 @@ export async function getAdCreatives(token, accountId) {
   if (!res.ok) {
     const err = await res.json();
     throw new Error(err.error?.message || 'Failed to fetch creatives');
+  }
+  const data = await res.json();
+  return data.data || [];
+}
+
+// Search regions for geo targeting
+export async function searchRegions(token, query) {
+  const res = await fetch(
+    `${META_API_BASE}/search?type=adgeolocation&q=${encodeURIComponent(query)}&location_types=region`,
+    { headers: getHeaders(token) }
+  );
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error?.message || 'Failed to search regions');
   }
   const data = await res.json();
   return data.data || [];

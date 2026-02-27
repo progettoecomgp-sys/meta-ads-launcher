@@ -7,6 +7,7 @@ import Modal from '../components/Modal';
 import Select from '../components/Select';
 import { CAMPAIGN_OBJECTIVES, OPTIMIZATION_GOALS, CTA_OPTIONS, ACCEPTED_IMAGE_TYPES, BID_STRATEGIES, CONVERSION_EVENTS, ATTRIBUTION_SETTINGS, DSA_COUNTRIES, buildDegreesOfFreedomSpec } from '../utils/constants';
 import CountryPicker from '../components/CountryPicker';
+import RegionPicker from '../components/RegionPicker';
 import DateTimePicker from '../components/DateTimePicker';
 import PagePicker from '../components/PagePicker';
 import * as api from '../utils/metaApi';
@@ -93,6 +94,7 @@ export default function Upload() {
   const [optimizationGoal, setOptimizationGoal] = useState(s.optimizationGoal || 'LINK_CLICKS');
   const [countries, setCountries] = useState(Array.isArray(s.countries) ? s.countries : ['IT']);
   const [excludedCountries, setExcludedCountries] = useState(Array.isArray(s.excludedCountries) ? s.excludedCountries : []);
+  const [excludedRegions, setExcludedRegions] = useState(Array.isArray(s.excludedRegions) ? s.excludedRegions : []);
   const [ageMin, setAgeMin] = useState(s.ageMin || '18');
   const [ageMax, setAgeMax] = useState(s.ageMax || '65');
   const [gender, setGender] = useState(s.gender || 'all');
@@ -145,7 +147,7 @@ export default function Upload() {
 
   const savePreset = (name) => {
     if (!name.trim()) return;
-    const preset = { name: name.trim(), countries, excludedCountries };
+    const preset = { name: name.trim(), countries, excludedCountries, excludedRegions };
     const updated = [...countryPresets.filter((p) => p.name !== name.trim()), preset];
     setCountryPresets(updated);
     localStorage.setItem(PRESETS_KEY, JSON.stringify(updated));
@@ -157,6 +159,7 @@ export default function Upload() {
   const loadPreset = (preset) => {
     setCountries(preset.countries || []);
     setExcludedCountries(preset.excludedCountries || []);
+    setExcludedRegions(preset.excludedRegions || []);
   };
 
   const deletePreset = (name) => {
@@ -173,13 +176,13 @@ export default function Upload() {
   useEffect(() => {
     sessionStorage.setItem(FORM_KEY, JSON.stringify({
       mode, creativeType, campaignName, objective, budgetType, bidStrategy,
-      adSetName, dailyBudget, optimizationGoal, countries, excludedCountries, ageMin, ageMax, gender, startDate,
+      adSetName, dailyBudget, optimizationGoal, countries, excludedCountries, excludedRegions, ageMin, ageMax, gender, startDate,
       selectedPixel, conversionEvent, bidAmount, attributionSetting,
       dailyMinSpend, dailySpendCap, budgetSharing, dsaBeneficiary, dsaPayor,
       selectedPage, selectedIgAccount, websiteUrl, globalCopy,
     }));
   }, [mode, creativeType, campaignName, objective, budgetType, bidStrategy,
-    adSetName, dailyBudget, optimizationGoal, countries, excludedCountries, ageMin, ageMax, gender, startDate,
+    adSetName, dailyBudget, optimizationGoal, countries, excludedCountries, excludedRegions, ageMin, ageMax, gender, startDate,
     selectedPixel, conversionEvent, bidAmount, attributionSetting,
     dailyMinSpend, dailySpendCap, budgetSharing, dsaBeneficiary, dsaPayor,
     selectedPage, selectedIgAccount, websiteUrl, globalCopy]);
@@ -344,7 +347,7 @@ export default function Upload() {
         const aset = await api.createAdSet(settings.accessToken, settings.adAccountId, {
           name: adSetName, campaignId, dailyBudget: budgetCents, optimizationGoal,
           billingEvent: 'IMPRESSIONS',
-          countries, excludedCountries,
+          countries, excludedCountries, excludedRegions,
           ageMin, ageMax, gender, status: adStatus,
           startTime: startDate || undefined,
           budgetType, bidStrategy, budgetSharing, pixelId: selectedPixel || undefined,
@@ -592,40 +595,50 @@ export default function Upload() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1">Countries</label>
+                <label className="block text-xs font-medium text-text-secondary mb-1">Countries & Regions</label>
 
                 {/* Preset bar */}
-                <div className="flex items-center gap-2 mb-2">
-                  {countryPresets.length > 0 && (
-                    <div className="flex items-center gap-1 flex-1">
-                      {countryPresets.map((p) => (
-                        <div key={p.name} className="flex items-center gap-0.5">
-                          <button
-                            type="button"
-                            onClick={() => loadPreset(p)}
-                            className="px-2.5 py-1 text-xs font-medium bg-accent/10 text-accent rounded-md hover:bg-accent/20 transition-colors"
-                          >
-                            {p.name}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deletePreset(p.name)}
-                            className="p-0.5 text-text-secondary hover:text-danger transition-colors"
-                            title="Elimina preset"
-                          >
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
+                <div className="flex items-center flex-wrap gap-1.5 mb-2">
+                  {countryPresets.map((p) => (
+                    <div key={p.name} className="group relative">
+                      <button
+                        type="button"
+                        onClick={() => loadPreset(p)}
+                        className="px-3 py-1.5 text-xs font-medium bg-accent/10 text-accent rounded-lg hover:bg-accent hover:text-white hover:shadow-md hover:scale-[1.04] transition-all duration-150 cursor-pointer"
+                      >
+                        {p.name}
+                      </button>
+                      {/* Delete badge — only visible on hover */}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); deletePreset(p.name); }}
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-danger text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 scale-75 group-hover:scale-100 transition-all duration-150 shadow-sm"
+                        title="Elimina preset"
+                      >
+                        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                      {/* Tooltip on hover */}
+                      <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                        <div className="bg-gray-900 text-white text-[10px] leading-relaxed rounded-lg px-3 py-2 shadow-lg whitespace-nowrap">
+                          <div><span className="text-gray-400">Include:</span> {p.countries?.join(', ') || 'nessuno'}</div>
+                          {p.excludedCountries?.length > 0 && (
+                            <div><span className="text-gray-400">Esclusi:</span> {p.excludedCountries.join(', ')}</div>
+                          )}
+                          {p.excludedRegions?.length > 0 && (
+                            <div><span className="text-gray-400">Regioni escluse:</span> {p.excludedRegions.map((r) => r.name).join(', ')}</div>
+                          )}
+                          <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45" />
                         </div>
-                      ))}
+                      </div>
                     </div>
-                  )}
+                  ))}
                   {!showSavePreset ? (
                     <button
                       type="button"
                       onClick={() => setShowSavePreset(true)}
-                      className="flex items-center gap-1 px-2 py-1 text-xs text-text-secondary hover:text-accent transition-colors whitespace-nowrap"
+                      className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-text-secondary hover:text-accent border border-dashed border-border hover:border-accent rounded-lg transition-all duration-150 whitespace-nowrap"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -640,7 +653,7 @@ export default function Upload() {
                         onChange={(e) => setPresetName(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && savePreset(presetName)}
                         placeholder="Nome..."
-                        className="w-24 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-accent/30"
+                        className="w-24 border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-accent/30"
                         autoFocus
                       />
                       <button type="button" onClick={() => savePreset(presetName)} className="px-2 py-1 text-xs font-medium text-accent hover:text-accent-hover">
@@ -662,9 +675,15 @@ export default function Upload() {
                 </div>
 
                 {/* Exclude countries */}
-                <div>
-                  <span className="text-xs text-danger font-medium mb-1 block">Escludi</span>
+                <div className="mb-2">
+                  <span className="text-xs text-danger font-medium mb-1 block">Escludi stati</span>
                   <CountryPicker selected={excludedCountries} onChange={setExcludedCountries} />
+                </div>
+
+                {/* Exclude regions */}
+                <div>
+                  <span className="text-xs text-danger font-medium mb-1 block">Escludi regioni</span>
+                  <RegionPicker selected={excludedRegions} onChange={setExcludedRegions} accessToken={settings.accessToken} />
                 </div>
               </div>
 
@@ -903,7 +922,7 @@ export default function Upload() {
                   {selectedPixel && (
                     <div className="flex justify-between"><span className="text-text-secondary">Conversion</span><span className="font-medium">{CONVERSION_EVENTS.find((e) => e.value === conversionEvent)?.label}</span></div>
                   )}
-                  <div className="flex justify-between"><span className="text-text-secondary">Targeting</span><span className="font-medium">{countries.join(', ')}{excludedCountries.length > 0 ? ` (excl: ${excludedCountries.join(', ')})` : ''} / {ageMin}-{ageMax} / {gender}</span></div>
+                  <div className="flex justify-between"><span className="text-text-secondary">Targeting</span><span className="font-medium">{countries.join(', ')}{excludedCountries.length > 0 ? ` (excl: ${excludedCountries.join(', ')})` : ''}{excludedRegions.length > 0 ? ` (reg. excl: ${excludedRegions.map((r) => r.name).join(', ')})` : ''} / {ageMin}-{ageMax} / {gender}</span></div>
                   {startDate && (
                     <div className="flex justify-between"><span className="text-text-secondary">Start</span><span className="font-medium">{new Date(startDate).toLocaleString()}</span></div>
                   )}
