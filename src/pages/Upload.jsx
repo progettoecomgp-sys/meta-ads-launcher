@@ -369,15 +369,21 @@ export default function Upload() {
       }
 
       if (creativeType === 'carousel') {
+        // Parallel upload of all carousel images
         setLaunchProgress({ step: 'Uploading carousel images...', progress: 0, total });
-        const cards = [];
-        for (let i = 0; i < files.length; i++) {
-          const creative = files[i];
+        let uploadCount = 0;
+        const uploads = await Promise.all(files.map(async (creative) => {
           const copy = getCreativeCopy(creative);
-          setLaunchProgress({ step: `[${i + 1}/${total}] Uploading ${creative.file.name}...`, progress: i + 1, total });
           const upload = await api.uploadImage(settings.accessToken, settings.adAccountId, creative.file);
-          cards.push({ imageHash: upload.hash, headline: copy.headline, description: copy.description, linkUrl: copy.linkUrl, cta: copy.cta });
-        }
+          uploadCount++;
+          setLaunchProgress({ step: `Uploaded ${uploadCount}/${total}`, progress: uploadCount, total });
+          return { upload, copy };
+        }));
+
+        const cards = uploads.map(({ upload, copy }) => ({
+          imageHash: upload.hash, headline: copy.headline, description: copy.description,
+          linkUrl: copy.linkUrl, cta: copy.cta,
+        }));
 
         setLaunchProgress({ step: 'Creating carousel creative...', progress: total, total });
         const globalUrl = buildUrlWithUtm(websiteUrl);
@@ -393,39 +399,59 @@ export default function Upload() {
         });
         results.push({ fileName: 'Carousel', adId: ad.id, creativeId: creativeResult.id });
       } else {
-        for (let i = 0; i < files.length; i++) {
-          const creative = files[i];
-          const copy = getCreativeCopy(creative);
+        // Phase 1: Upload all files in parallel
+        setLaunchProgress({ step: 'Uploading creatives...', progress: 0, total });
+        let uploadCount = 0;
+        const uploads = await Promise.all(files.map(async (creative) => {
           const isImage = ACCEPTED_IMAGE_TYPES.includes(creative.file.type);
+          const upload = isImage
+            ? await api.uploadImage(settings.accessToken, settings.adAccountId, creative.file)
+            : await api.uploadVideo(settings.accessToken, settings.adAccountId, creative.file);
+          uploadCount++;
+          setLaunchProgress({ step: `Uploaded ${uploadCount}/${total}`, progress: uploadCount, total });
+          return { creative, upload, isImage };
+        }));
 
-          setLaunchProgress({ step: `[${i + 1}/${total}] Uploading ${creative.file.name}...`, progress: i + 1, total });
+        // Phase 2: Fetch video thumbnails in parallel (non-blocking — videos had time to process during parallel uploads)
+        const videoUploads = uploads.filter((u) => !u.isImage);
+        if (videoUploads.length > 0) {
+          setLaunchProgress({ step: `Processing ${videoUploads.length} video thumbnail${videoUploads.length > 1 ? 's' : ''}...`, progress: total, total });
+          await Promise.all(videoUploads.map(async (u) => {
+            u.thumbnailUrl = await api.getVideoThumbnail(settings.accessToken, u.upload.id);
+          }));
+        }
 
+        // Phase 3: Create creatives + ads in parallel
+        setLaunchProgress({ step: 'Creating ads...', progress: 0, total });
+        let adCount = 0;
+        const adResults = await Promise.all(uploads.map(async (u) => {
+          const copy = getCreativeCopy(u.creative);
           let creativeResult;
-          if (isImage) {
+          if (u.isImage) {
             const imgSpec = buildDegreesOfFreedomSpec(settings.enhancements, 'image');
-            const upload = await api.uploadImage(settings.accessToken, settings.adAccountId, creative.file);
             creativeResult = await api.createImageCreative(settings.accessToken, settings.adAccountId, {
-              name: creative.file.name, pageId, imageHash: upload.hash,
+              name: u.creative.file.name, pageId, imageHash: u.upload.hash,
               message: copy.primaryText, headline: copy.headline, description: copy.description,
               linkUrl: copy.linkUrl, cta: copy.cta, instagramAccountId: igId,
               degreesOfFreedomSpec: imgSpec,
             });
           } else {
             const vidSpec = buildDegreesOfFreedomSpec(settings.enhancements, 'video');
-            const upload = await api.uploadVideo(settings.accessToken, settings.adAccountId, creative.file);
             creativeResult = await api.createVideoCreative(settings.accessToken, settings.adAccountId, {
-              name: creative.file.name, pageId, videoId: upload.id,
+              name: u.creative.file.name, pageId, videoId: u.upload.id,
               message: copy.primaryText, headline: copy.headline, description: copy.description,
-              linkUrl: copy.linkUrl, cta: copy.cta, imageUrl: upload.thumbnailUrl,
+              linkUrl: copy.linkUrl, cta: copy.cta, imageUrl: u.thumbnailUrl || undefined,
               instagramAccountId: igId, degreesOfFreedomSpec: vidSpec,
             });
           }
-
           const ad = await api.createAd(settings.accessToken, settings.adAccountId, {
-            name: `Ad - ${creative.file.name}`, adSetId, creativeId: creativeResult.id, status: adStatus,
+            name: `Ad - ${u.creative.file.name}`, adSetId, creativeId: creativeResult.id, status: adStatus,
           });
-          results.push({ fileName: creative.file.name, adId: ad.id, creativeId: creativeResult.id });
-        }
+          adCount++;
+          setLaunchProgress({ step: `Creating ads... ${adCount}/${total}`, progress: adCount, total });
+          return { fileName: u.creative.file.name, adId: ad.id, creativeId: creativeResult.id };
+        }));
+        results.push(...adResults);
       }
 
       setLaunchProgress({ step: 'All done!', progress: total, total });

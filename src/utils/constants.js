@@ -117,25 +117,26 @@ export const ENHANCEMENT_CONFIGS = {
 };
 
 // Map UI toggle keys to Meta API creative_features_spec keys
+// Each UI toggle maps to BOTH the umbrella key AND its specific individual key
 const ENHANCEMENT_API_MAP = {
-  advantage_plus_creative: 'standard_enhancements_catalog',
-  relevant_comments: 'standard_enhancements_catalog',
-  visual_touchups: 'standard_enhancements_catalog',
-  text_improvements: 'standard_enhancements_catalog',
-  add_overlays: 'standard_enhancements_catalog',
-  brightness_contrast: 'standard_enhancements_catalog',
-  music_overlay: 'standard_enhancements_catalog',
-  image_animation: 'standard_enhancements_catalog',
-  generate_backgrounds: 'standard_enhancements_catalog',
-  expand_image: 'standard_enhancements_catalog',
-  enhance_cta: 'standard_enhancements_catalog',
-  adapt_to_placement: 'standard_enhancements_catalog',
-  dynamic_media: 'standard_enhancements_catalog',
-  add_site_links: 'standard_enhancements_catalog',
-  translate_text: 'text_overlay_translation',
-  add_catalog_items: 'product_metadata_automation',
-  dynamic_description: 'product_metadata_automation',
-  profile_end_card: 'profile_card',
+  advantage_plus_creative: ['standard_enhancements_catalog'],
+  relevant_comments: ['standard_enhancements_catalog', 'inline_comment'],
+  visual_touchups: ['standard_enhancements_catalog', 'image_enhancement'],
+  text_improvements: ['standard_enhancements_catalog', 'text_generation'],
+  add_overlays: ['standard_enhancements_catalog', 'image_templates'],
+  brightness_contrast: ['standard_enhancements_catalog', 'image_brightness_and_contrast'],
+  music_overlay: ['standard_enhancements_catalog', 'music'],
+  image_animation: ['standard_enhancements_catalog', 'cv_transformer'],
+  generate_backgrounds: ['standard_enhancements_catalog', 'image_uncrop'],
+  expand_image: ['standard_enhancements_catalog', 'image_auto_crop'],
+  enhance_cta: ['standard_enhancements_catalog', 'enhance_cta'],
+  adapt_to_placement: ['standard_enhancements_catalog', 'video_auto_crop'],
+  dynamic_media: ['standard_enhancements_catalog', 'video_editing'],
+  add_site_links: ['standard_enhancements_catalog', 'site_extensions'],
+  translate_text: ['text_overlay_translation'],
+  add_catalog_items: ['product_metadata_automation', 'product_extensions'],
+  dynamic_description: ['product_metadata_automation', 'description_automation'],
+  profile_end_card: ['profile_card'],
 };
 
 // Build degrees_of_freedom_spec from enhancement settings
@@ -147,22 +148,45 @@ export function buildDegreesOfFreedomSpec(enhancements, creativeType) {
   // Determine OPT_IN / OPT_OUT per API key
   const apiStates = {};
   for (const item of config) {
-    const apiKey = ENHANCEMENT_API_MAP[item.key];
-    if (!apiKey) continue;
-    if (typeSettings[item.key]) {
-      apiStates[apiKey] = 'OPT_IN';
-    } else if (!apiStates[apiKey]) {
-      apiStates[apiKey] = 'OPT_OUT';
+    const apiKeys = ENHANCEMENT_API_MAP[item.key];
+    if (!apiKeys) continue;
+    for (const apiKey of apiKeys) {
+      if (typeSettings[item.key]) {
+        apiStates[apiKey] = 'OPT_IN';
+      } else if (!apiStates[apiKey]) {
+        apiStates[apiKey] = 'OPT_OUT';
+      }
     }
   }
 
-  // Always include all 5 valid API keys
+  // Include all known API keys — both umbrella and individual — to force OPT_OUT
+  // on everything not explicitly opted in. This prevents Meta from sneakily enabling features.
   const ALL_API_KEYS = [
+    // Umbrella keys
     'standard_enhancements_catalog',
     'ig_video_native_subtitle',
     'product_metadata_automation',
     'profile_card',
     'text_overlay_translation',
+    'multi_advertiser_ads',
+    // Individual feature keys
+    'image_enhancement',
+    'text_generation',
+    'text_optimization',
+    'image_auto_crop',
+    'image_brightness_and_contrast',
+    'video_auto_crop',
+    'image_templates',
+    'image_touchup',
+    'video_editing',
+    'description_automation',
+    'image_uncrop',
+    'music',
+    'cv_transformer',
+    'enhance_cta',
+    'site_extensions',
+    'product_extensions',
+    'inline_comment',
   ];
   const creative_features_spec = {};
   for (const k of ALL_API_KEYS) {

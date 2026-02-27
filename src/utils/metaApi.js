@@ -399,21 +399,27 @@ export async function uploadVideo(token, accountId, file) {
     throw new Error(extractError(err));
   }
   const data = await res.json();
+  return { id: data.id };
+}
 
-  // Fetch video thumbnail
-  let thumbnailUrl = null;
-  try {
-    const thumbRes = await fetch(
-      `${META_API_BASE}/${data.id}?fields=picture`,
-      { headers: getHeaders(token) }
-    );
-    if (thumbRes.ok) {
-      const thumbData = await thumbRes.json();
-      thumbnailUrl = thumbData.picture || null;
-    }
-  } catch {}
-
-  return { id: data.id, thumbnailUrl };
+// Fetch video thumbnail with retry — separated so it can run in parallel
+export async function getVideoThumbnail(token, videoId) {
+  const maxAttempts = 5;
+  const delay = 2000;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, delay));
+    try {
+      const res = await fetch(
+        `${META_API_BASE}/${videoId}?fields=picture`,
+        { headers: getHeaders(token) }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.picture) return data.picture;
+      }
+    } catch {}
+  }
+  return null;
 }
 
 // Create ad creative (image)
