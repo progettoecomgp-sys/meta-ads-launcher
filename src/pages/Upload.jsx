@@ -95,6 +95,7 @@ export default function Upload() {
   const [countries, setCountries] = useState(Array.isArray(s.countries) ? s.countries : ['IT']);
   const [excludedCountries, setExcludedCountries] = useState(Array.isArray(s.excludedCountries) ? s.excludedCountries : []);
   const [excludedRegions, setExcludedRegions] = useState(Array.isArray(s.excludedRegions) ? s.excludedRegions : []);
+  const [showExclusions, setShowExclusions] = useState(s.showExclusions || false);
   const [ageMin, setAgeMin] = useState(s.ageMin || '18');
   const [ageMax, setAgeMax] = useState(s.ageMax || '65');
   const [gender, setGender] = useState(s.gender || 'all');
@@ -160,6 +161,8 @@ export default function Upload() {
     setCountries(preset.countries || []);
     setExcludedCountries(preset.excludedCountries || []);
     setExcludedRegions(preset.excludedRegions || []);
+    const hasExclusions = (preset.excludedCountries?.length > 0) || (preset.excludedRegions?.length > 0);
+    setShowExclusions(hasExclusions);
   };
 
   const deletePreset = (name) => {
@@ -176,13 +179,13 @@ export default function Upload() {
   useEffect(() => {
     sessionStorage.setItem(FORM_KEY, JSON.stringify({
       mode, creativeType, campaignName, objective, budgetType, bidStrategy,
-      adSetName, dailyBudget, optimizationGoal, countries, excludedCountries, excludedRegions, ageMin, ageMax, gender, startDate,
+      adSetName, dailyBudget, optimizationGoal, countries, excludedCountries, excludedRegions, showExclusions, ageMin, ageMax, gender, startDate,
       selectedPixel, conversionEvent, bidAmount, attributionSetting,
       dailyMinSpend, dailySpendCap, budgetSharing, dsaBeneficiary, dsaPayor,
       selectedPage, selectedIgAccount, websiteUrl, globalCopy,
     }));
   }, [mode, creativeType, campaignName, objective, budgetType, bidStrategy,
-    adSetName, dailyBudget, optimizationGoal, countries, excludedCountries, excludedRegions, ageMin, ageMax, gender, startDate,
+    adSetName, dailyBudget, optimizationGoal, countries, excludedCountries, excludedRegions, showExclusions, ageMin, ageMax, gender, startDate,
     selectedPixel, conversionEvent, bidAmount, attributionSetting,
     dailyMinSpend, dailySpendCap, budgetSharing, dsaBeneficiary, dsaPayor,
     selectedPage, selectedIgAccount, websiteUrl, globalCopy]);
@@ -669,22 +672,40 @@ export default function Upload() {
                 </div>
 
                 {/* Include countries */}
-                <div className="mb-2">
-                  <span className="text-xs text-success font-medium mb-1 block">Include</span>
-                  <CountryPicker selected={countries} onChange={setCountries} />
-                </div>
+                <CountryPicker selected={countries} onChange={setCountries} />
 
-                {/* Exclude countries */}
-                <div className="mb-2">
-                  <span className="text-xs text-danger font-medium mb-1 block">Escludi stati</span>
-                  <CountryPicker selected={excludedCountries} onChange={setExcludedCountries} />
-                </div>
+                {/* Exclusion toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !showExclusions;
+                    setShowExclusions(next);
+                    if (!next) { setExcludedCountries([]); setExcludedRegions([]); }
+                  }}
+                  className={`mt-2 flex items-center gap-1.5 text-xs font-medium transition-colors ${showExclusions ? 'text-danger' : 'text-text-secondary hover:text-danger'}`}
+                >
+                  <svg className={`w-3.5 h-3.5 transition-transform duration-150 ${showExclusions ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  {showExclusions ? 'Esclusioni attive' : 'Aggiungi esclusioni'}
+                </button>
 
-                {/* Exclude regions */}
-                <div>
-                  <span className="text-xs text-danger font-medium mb-1 block">Escludi regioni</span>
-                  <RegionPicker selected={excludedRegions} onChange={setExcludedRegions} accessToken={settings.accessToken} />
-                </div>
+                {/* Exclusion fields — only when enabled */}
+                {showExclusions && (
+                  <div className="mt-2 space-y-2 pl-3 border-l-2 border-danger/20">
+                    {/* Exclude countries */}
+                    <div>
+                      <span className="text-xs text-danger font-medium mb-1 block">Escludi stati</span>
+                      <CountryPicker selected={excludedCountries} onChange={setExcludedCountries} />
+                    </div>
+
+                    {/* Exclude regions */}
+                    <div>
+                      <span className="text-xs text-danger font-medium mb-1 block">Escludi regioni</span>
+                      <RegionPicker selected={excludedRegions} onChange={setExcludedRegions} accessToken={settings.accessToken} countries={countries} />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* DSA fields (EU/EEA only) */}

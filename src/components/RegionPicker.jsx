@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { searchRegions } from '../utils/metaApi';
 
-export default function RegionPicker({ selected, onChange, accessToken }) {
+export default function RegionPicker({ selected, onChange, accessToken, countries }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [results, setResults] = useState([]);
@@ -17,7 +17,7 @@ export default function RegionPicker({ selected, onChange, accessToken }) {
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  // Debounced search
+  // Debounced search — filter results by included countries
   const doSearch = useCallback((query) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!query || query.length < 2 || !accessToken) {
@@ -29,14 +29,19 @@ export default function RegionPicker({ selected, onChange, accessToken }) {
     debounceRef.current = setTimeout(async () => {
       try {
         const data = await searchRegions(accessToken, query);
-        setResults(data);
+        // Filter to only show regions from included countries
+        const countryCodes = countries || [];
+        const filtered = countryCodes.length > 0
+          ? data.filter((r) => countryCodes.includes(r.country_code))
+          : data;
+        setResults(filtered);
       } catch {
         setResults([]);
       } finally {
         setLoading(false);
       }
     }, 400);
-  }, [accessToken]);
+  }, [accessToken, countries]);
 
   useEffect(() => {
     doSearch(search);
@@ -44,6 +49,7 @@ export default function RegionPicker({ selected, onChange, accessToken }) {
   }, [search, doSearch]);
 
   const toggle = (region) => {
+    setSearch('');
     const exists = selected.find((r) => r.key === region.key);
     if (exists) {
       onChange(selected.filter((r) => r.key !== region.key));
@@ -55,6 +61,8 @@ export default function RegionPicker({ selected, onChange, accessToken }) {
   const remove = (key) => {
     onChange(selected.filter((r) => r.key !== key));
   };
+
+  const hasCountries = countries && countries.length > 0;
 
   return (
     <div ref={ref} className="relative">
@@ -89,6 +97,8 @@ export default function RegionPicker({ selected, onChange, accessToken }) {
         <div className="absolute z-50 mt-1 w-full bg-white border border-border rounded-lg shadow-lg max-h-[240px] overflow-y-auto">
           {!accessToken ? (
             <div className="px-3 py-2 text-xs text-text-secondary">Configura l'access token per cercare regioni</div>
+          ) : !hasCountries ? (
+            <div className="px-3 py-2 text-xs text-text-secondary">Aggiungi almeno un paese incluso per cercare regioni</div>
           ) : search.length < 2 ? (
             <div className="px-3 py-2 text-xs text-text-secondary">Digita almeno 2 caratteri per cercare...</div>
           ) : loading ? (
@@ -97,7 +107,7 @@ export default function RegionPicker({ selected, onChange, accessToken }) {
               <span className="text-xs text-text-secondary">Ricerca...</span>
             </div>
           ) : results.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-text-secondary">Nessuna regione trovata</div>
+            <div className="px-3 py-2 text-xs text-text-secondary">Nessuna regione trovata per {countries.join(', ')}</div>
           ) : (
             results.map((r) => {
               const isSelected = selected.some((s) => s.key === r.key);

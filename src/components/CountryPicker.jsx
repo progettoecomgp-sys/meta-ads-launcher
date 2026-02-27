@@ -20,6 +20,7 @@ export default function CountryPicker({ selected, onChange }) {
   });
 
   const toggle = (code) => {
+    setSearch('');
     if (selected.includes(code)) {
       onChange(selected.filter((c) => c !== code));
     } else {
