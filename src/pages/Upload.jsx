@@ -92,6 +92,7 @@ export default function Upload() {
   const [dailyBudget, setDailyBudget] = useState(s.dailyBudget || '20');
   const [optimizationGoal, setOptimizationGoal] = useState(s.optimizationGoal || 'LINK_CLICKS');
   const [countries, setCountries] = useState(Array.isArray(s.countries) ? s.countries : ['IT']);
+  const [excludedCountries, setExcludedCountries] = useState(Array.isArray(s.excludedCountries) ? s.excludedCountries : []);
   const [ageMin, setAgeMin] = useState(s.ageMin || '18');
   const [ageMax, setAgeMax] = useState(s.ageMax || '65');
   const [gender, setGender] = useState(s.gender || 'all');
@@ -134,6 +135,36 @@ export default function Upload() {
   const [launchProgress, setLaunchProgress] = useState({ step: '', progress: 0, total: 0 });
   const [adStatus, setAdStatus] = useState('PAUSED');
 
+  // Country presets (localStorage)
+  const PRESETS_KEY = 'meta-ads-country-presets';
+  const [countryPresets, setCountryPresets] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(PRESETS_KEY)) || []; } catch { return []; }
+  });
+  const [presetName, setPresetName] = useState('');
+  const [showSavePreset, setShowSavePreset] = useState(false);
+
+  const savePreset = (name) => {
+    if (!name.trim()) return;
+    const preset = { name: name.trim(), countries, excludedCountries };
+    const updated = [...countryPresets.filter((p) => p.name !== name.trim()), preset];
+    setCountryPresets(updated);
+    localStorage.setItem(PRESETS_KEY, JSON.stringify(updated));
+    setPresetName('');
+    setShowSavePreset(false);
+    addToast(`Preset "${name.trim()}" salvato`);
+  };
+
+  const loadPreset = (preset) => {
+    setCountries(preset.countries || []);
+    setExcludedCountries(preset.excludedCountries || []);
+  };
+
+  const deletePreset = (name) => {
+    const updated = countryPresets.filter((p) => p.name !== name);
+    setCountryPresets(updated);
+    localStorage.setItem(PRESETS_KEY, JSON.stringify(updated));
+  };
+
   const needsBidAmount = bidStrategy === 'BID_CAP' || bidStrategy === 'COST_CAP';
   const needsDsa = countries.some((c) => DSA_COUNTRIES.has(c));
   const needsRoas = bidStrategy === 'LOWEST_COST_WITH_MIN_ROAS';
@@ -142,13 +173,13 @@ export default function Upload() {
   useEffect(() => {
     sessionStorage.setItem(FORM_KEY, JSON.stringify({
       mode, creativeType, campaignName, objective, budgetType, bidStrategy,
-      adSetName, dailyBudget, optimizationGoal, countries, ageMin, ageMax, gender, startDate,
+      adSetName, dailyBudget, optimizationGoal, countries, excludedCountries, ageMin, ageMax, gender, startDate,
       selectedPixel, conversionEvent, bidAmount, attributionSetting,
       dailyMinSpend, dailySpendCap, budgetSharing, dsaBeneficiary, dsaPayor,
       selectedPage, selectedIgAccount, websiteUrl, globalCopy,
     }));
   }, [mode, creativeType, campaignName, objective, budgetType, bidStrategy,
-    adSetName, dailyBudget, optimizationGoal, countries, ageMin, ageMax, gender, startDate,
+    adSetName, dailyBudget, optimizationGoal, countries, excludedCountries, ageMin, ageMax, gender, startDate,
     selectedPixel, conversionEvent, bidAmount, attributionSetting,
     dailyMinSpend, dailySpendCap, budgetSharing, dsaBeneficiary, dsaPayor,
     selectedPage, selectedIgAccount, websiteUrl, globalCopy]);
@@ -313,7 +344,7 @@ export default function Upload() {
         const aset = await api.createAdSet(settings.accessToken, settings.adAccountId, {
           name: adSetName, campaignId, dailyBudget: budgetCents, optimizationGoal,
           billingEvent: 'IMPRESSIONS',
-          countries,
+          countries, excludedCountries,
           ageMin, ageMax, gender, status: adStatus,
           startTime: startDate || undefined,
           budgetType, bidStrategy, budgetSharing, pixelId: selectedPixel || undefined,
@@ -562,7 +593,79 @@ export default function Upload() {
 
               <div>
                 <label className="block text-xs font-medium text-text-secondary mb-1">Countries</label>
-                <CountryPicker selected={countries} onChange={setCountries} />
+
+                {/* Preset bar */}
+                <div className="flex items-center gap-2 mb-2">
+                  {countryPresets.length > 0 && (
+                    <div className="flex items-center gap-1 flex-1">
+                      {countryPresets.map((p) => (
+                        <div key={p.name} className="flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => loadPreset(p)}
+                            className="px-2.5 py-1 text-xs font-medium bg-accent/10 text-accent rounded-md hover:bg-accent/20 transition-colors"
+                          >
+                            {p.name}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deletePreset(p.name)}
+                            className="p-0.5 text-text-secondary hover:text-danger transition-colors"
+                            title="Elimina preset"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {!showSavePreset ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowSavePreset(true)}
+                      className="flex items-center gap-1 px-2 py-1 text-xs text-text-secondary hover:text-accent transition-colors whitespace-nowrap"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      Salva preset
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        value={presetName}
+                        onChange={(e) => setPresetName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && savePreset(presetName)}
+                        placeholder="Nome..."
+                        className="w-24 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-accent/30"
+                        autoFocus
+                      />
+                      <button type="button" onClick={() => savePreset(presetName)} className="px-2 py-1 text-xs font-medium text-accent hover:text-accent-hover">
+                        Salva
+                      </button>
+                      <button type="button" onClick={() => { setShowSavePreset(false); setPresetName(''); }} className="px-1 py-1 text-xs text-text-secondary hover:text-text">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Include countries */}
+                <div className="mb-2">
+                  <span className="text-xs text-success font-medium mb-1 block">Include</span>
+                  <CountryPicker selected={countries} onChange={setCountries} />
+                </div>
+
+                {/* Exclude countries */}
+                <div>
+                  <span className="text-xs text-danger font-medium mb-1 block">Escludi</span>
+                  <CountryPicker selected={excludedCountries} onChange={setExcludedCountries} />
+                </div>
               </div>
 
               {/* DSA fields (EU/EEA only) */}
@@ -800,7 +903,7 @@ export default function Upload() {
                   {selectedPixel && (
                     <div className="flex justify-between"><span className="text-text-secondary">Conversion</span><span className="font-medium">{CONVERSION_EVENTS.find((e) => e.value === conversionEvent)?.label}</span></div>
                   )}
-                  <div className="flex justify-between"><span className="text-text-secondary">Targeting</span><span className="font-medium">{countries.join(', ')} / {ageMin}-{ageMax} / {gender}</span></div>
+                  <div className="flex justify-between"><span className="text-text-secondary">Targeting</span><span className="font-medium">{countries.join(', ')}{excludedCountries.length > 0 ? ` (excl: ${excludedCountries.join(', ')})` : ''} / {ageMin}-{ageMax} / {gender}</span></div>
                   {startDate && (
                     <div className="flex justify-between"><span className="text-text-secondary">Start</span><span className="font-medium">{new Date(startDate).toLocaleString()}</span></div>
                   )}

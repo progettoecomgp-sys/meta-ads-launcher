@@ -262,7 +262,7 @@ export async function createCampaign(token, accountId, { name, objective, status
 // Create ad set
 export async function createAdSet(token, accountId, {
   name, campaignId, dailyBudget, optimizationGoal, billingEvent,
-  countries, ageMin, ageMax, gender, status, startTime, budgetType, pixelId,
+  countries, excludedCountries, ageMin, ageMax, gender, status, startTime, budgetType, pixelId,
   conversionEvent, bidAmount, bidStrategy, budgetSharing, attributionSetting, dailyMinSpend, dailySpendCap,
   dsaBeneficiary, dsaPayor,
 }) {
@@ -271,6 +271,9 @@ export async function createAdSet(token, accountId, {
     age_min: Number(ageMin) || 18,
     age_max: Number(ageMax) || 65,
   };
+  if (excludedCountries && excludedCountries.length > 0) {
+    targeting.excluded_geo_locations = { countries: excludedCountries };
+  }
   if (gender && gender !== 'all') {
     targeting.genders = gender === 'male' ? [1] : [2];
   }
