@@ -21,7 +21,7 @@ function CardMedia({ file }) {
   if (!url) return <div className="w-full h-full bg-bg" />;
   return isImage
     ? <img src={url} alt="" className="w-full h-full object-cover" />
-    : <video src={url} className="w-full h-full object-cover" muted />;
+    : <video src={url} className="w-full h-full object-cover" controls muted autoPlay loop playsInline />;
 }
 
 export default function AdPreview({ file, files, primaryText, headline, description, cta, pageName, websiteUrl, isCarousel, cards }) {

@@ -398,7 +398,22 @@ export async function uploadVideo(token, accountId, file) {
     const err = await res.json();
     throw new Error(extractError(err));
   }
-  return res.json();
+  const data = await res.json();
+
+  // Fetch video thumbnail
+  let thumbnailUrl = null;
+  try {
+    const thumbRes = await fetch(
+      `${META_API_BASE}/${data.id}?fields=picture`,
+      { headers: getHeaders(token) }
+    );
+    if (thumbRes.ok) {
+      const thumbData = await thumbRes.json();
+      thumbnailUrl = thumbData.picture || null;
+    }
+  } catch {}
+
+  return { id: data.id, thumbnailUrl };
 }
 
 // Create ad creative (image)
@@ -447,7 +462,7 @@ export async function createImageCreative(token, accountId, {
 
 // Create ad creative (video)
 export async function createVideoCreative(token, accountId, {
-  name, pageId, videoId, message, headline, description, linkUrl, cta, imageHash, instagramAccountId, degreesOfFreedomSpec,
+  name, pageId, videoId, message, headline, description, linkUrl, cta, imageHash, imageUrl, instagramAccountId, degreesOfFreedomSpec,
 }) {
   const videoData = {
     video_id: videoId,
@@ -458,6 +473,8 @@ export async function createVideoCreative(token, accountId, {
   };
   if (imageHash) {
     videoData.image_hash = imageHash;
+  } else if (imageUrl) {
+    videoData.image_url = imageUrl;
   }
 
   const objectStorySpec = {

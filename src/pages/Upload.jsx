@@ -416,8 +416,8 @@ export default function Upload() {
             creativeResult = await api.createVideoCreative(settings.accessToken, settings.adAccountId, {
               name: creative.file.name, pageId, videoId: upload.id,
               message: copy.primaryText, headline: copy.headline, description: copy.description,
-              linkUrl: copy.linkUrl, cta: copy.cta, instagramAccountId: igId,
-              degreesOfFreedomSpec: vidSpec,
+              linkUrl: copy.linkUrl, cta: copy.cta, imageUrl: upload.thumbnailUrl,
+              instagramAccountId: igId, degreesOfFreedomSpec: vidSpec,
             });
           }
 
