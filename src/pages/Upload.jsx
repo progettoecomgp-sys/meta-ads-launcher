@@ -417,11 +417,10 @@ export default function Upload() {
 
   const buildUrlWithUtm = useCallback((baseUrl) => {
     if (!baseUrl) return '';
-    const tmpl = settings.utmTemplate?.trim();
-    if (!tmpl) return baseUrl;
-    const separator = baseUrl.includes('?') ? '&' : '?';
-    return `${baseUrl}${separator}${tmpl}`;
-  }, [settings.utmTemplate]);
+    let url = baseUrl.trim();
+    if (url && !/^https?:\/\//i.test(url)) url = `https://${url}`;
+    return url;
+  }, []);
 
   const getCreativeCopy = useCallback((creative) => {
     const rawUrl = creative.useCustomCopy ? (creative.linkUrl || websiteUrl) : websiteUrl;
@@ -522,11 +521,11 @@ export default function Upload() {
     // Helper to build URL with UTM from snapshot
     const snapBuildUrl = (baseUrl) => {
       if (!baseUrl) return '';
-      const tmpl = snap.utmTemplate?.trim();
-      if (!tmpl) return baseUrl;
-      const separator = baseUrl.includes('?') ? '&' : '?';
-      return `${baseUrl}${separator}${tmpl}`;
+      let url = baseUrl.trim();
+      if (url && !/^https?:\/\//i.test(url)) url = `https://${url}`;
+      return url;
     };
+    const snapUrlTags = snap.utmTemplate?.trim().replace(/[\r\n]+/g, '') || '';
 
     // Helper to get creative copy from snapshot (empty fields fall back to global)
     const snapGetCopy = (creative) => {
@@ -631,11 +630,25 @@ export default function Upload() {
           updateLaunch({ step: 'Creating carousel creative...', progress: total });
           const globalUrl = snapBuildUrl(snap.websiteUrl);
           const carouselSpec = buildDegreesOfFreedomSpec(snap.enhancements, 'carousel');
-          const creativeResult = await api.createCarouselCreative(snap.accessToken, snap.adAccountId, {
-            name: `Carousel - ${snap.campaignName || 'Ad'}`, pageId: snap.pageId, cards,
-            message: snap.globalCopy.primaryText, linkUrl: globalUrl, instagramAccountId: snap.igId,
-            degreesOfFreedomSpec: carouselSpec,
-          });
+          let creativeResult;
+          try {
+            creativeResult = await api.createCarouselCreative(snap.accessToken, snap.adAccountId, {
+              name: `Carousel - ${snap.campaignName || 'Ad'}`, pageId: snap.pageId, cards,
+              message: snap.globalCopy.primaryText, linkUrl: globalUrl, cta: snap.globalCopy.cta,
+              instagramAccountId: snap.igId, degreesOfFreedomSpec: carouselSpec, urlTags: snapUrlTags,
+            });
+          } catch (igErr) {
+            if (snap.igId && igErr.message.includes('instagram_actor_id')) {
+              addToast('Account IG non valido per questo ad account — lancio senza IG', 'error');
+              creativeResult = await api.createCarouselCreative(snap.accessToken, snap.adAccountId, {
+                name: `Carousel - ${snap.campaignName || 'Ad'}`, pageId: snap.pageId, cards,
+                message: snap.globalCopy.primaryText, linkUrl: globalUrl, cta: snap.globalCopy.cta,
+                degreesOfFreedomSpec: carouselSpec, urlTags: snapUrlTags,
+              });
+            } else {
+              throw igErr;
+            }
+          }
 
           const ad = await api.createAd(snap.accessToken, snap.adAccountId, {
             name: 'Ad - Carousel', adSetId, creativeId: creativeResult.id, status: snap.adStatus,
@@ -673,7 +686,7 @@ export default function Upload() {
                 name: u.creative.file.name, pageId: snap.pageId, imageHash: u.upload.hash,
                 message: copy.primaryText, headline: copy.headline, description: copy.description,
                 linkUrl: copy.linkUrl, cta: copy.cta, instagramAccountId: snap.igId,
-                degreesOfFreedomSpec: imgSpec,
+                degreesOfFreedomSpec: imgSpec, urlTags: snapUrlTags,
               });
             } else {
               const vidSpec = buildDegreesOfFreedomSpec(snap.enhancements, 'video');
@@ -681,7 +694,7 @@ export default function Upload() {
                 name: u.creative.file.name, pageId: snap.pageId, videoId: u.upload.id,
                 message: copy.primaryText, headline: copy.headline, description: copy.description,
                 linkUrl: copy.linkUrl, cta: copy.cta, imageUrl: u.thumbnailUrl || undefined,
-                instagramAccountId: snap.igId, degreesOfFreedomSpec: vidSpec,
+                instagramAccountId: snap.igId, degreesOfFreedomSpec: vidSpec, urlTags: snapUrlTags,
               });
             }
             const ad = await api.createAd(snap.accessToken, snap.adAccountId, {
@@ -1397,7 +1410,7 @@ export default function Upload() {
               <>
                 <div className="flex justify-between"><span className="text-text-secondary">Campaign</span><span className="font-medium">{campaigns.find((c) => c.id === selectedCampaign)?.name}</span></div>
                 <div className="flex justify-between"><span className="text-text-secondary">Ad Set{selectedAdSet === '__new__' ? ' (new)' : ''}</span><span className="font-medium">{selectedAdSet === '__new__' ? adSetName : adSets.find((a) => a.id === selectedAdSet)?.name}</span></div>
-                {selectedAdSet === '__new__' && (
+                {selectedAdSet === '__new__' && !isCBO && (
                   <div className="flex justify-between"><span className="text-text-secondary">Budget</span><span className="font-medium">${Number(dailyBudget).toFixed(2)}/day</span></div>
                 )}
               </>

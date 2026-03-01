@@ -444,7 +444,7 @@ export async function getVideoThumbnail(token, videoId) {
 
 // Create ad creative (image)
 export async function createImageCreative(token, accountId, {
-  name, pageId, imageHash, message, headline, description, linkUrl, cta, instagramAccountId, degreesOfFreedomSpec,
+  name, pageId, imageHash, message, headline, description, linkUrl, cta, instagramAccountId, degreesOfFreedomSpec, urlTags,
 }) {
   const linkData = {
     image_hash: imageHash,
@@ -470,6 +470,7 @@ export async function createImageCreative(token, accountId, {
     object_story_spec: JSON.stringify(objectStorySpec),
     degrees_of_freedom_spec: JSON.stringify(degreesOfFreedomSpec),
   });
+  if (urlTags) params.set('url_tags', urlTags);
 
   const res = await fetch(
     `${META_API_BASE}/${actId(accountId)}/adcreatives`,
@@ -488,7 +489,7 @@ export async function createImageCreative(token, accountId, {
 
 // Create ad creative (video)
 export async function createVideoCreative(token, accountId, {
-  name, pageId, videoId, message, headline, description, linkUrl, cta, imageHash, imageUrl, instagramAccountId, degreesOfFreedomSpec,
+  name, pageId, videoId, message, headline, description, linkUrl, cta, imageHash, imageUrl, instagramAccountId, degreesOfFreedomSpec, urlTags,
 }) {
   const videoData = {
     video_id: videoId,
@@ -516,6 +517,7 @@ export async function createVideoCreative(token, accountId, {
     object_story_spec: JSON.stringify(objectStorySpec),
     degrees_of_freedom_spec: JSON.stringify(degreesOfFreedomSpec),
   });
+  if (urlTags) params.set('url_tags', urlTags);
 
   const res = await fetch(
     `${META_API_BASE}/${actId(accountId)}/adcreatives`,
@@ -534,7 +536,7 @@ export async function createVideoCreative(token, accountId, {
 
 // Create carousel ad creative
 export async function createCarouselCreative(token, accountId, {
-  name, pageId, cards, message, linkUrl, instagramAccountId, degreesOfFreedomSpec,
+  name, pageId, cards, message, linkUrl, cta, instagramAccountId, degreesOfFreedomSpec, urlTags,
 }) {
   // cards = [{ imageHash, headline, description, linkUrl, cta }]
   const childAttachments = cards.map((card) => {
@@ -554,7 +556,12 @@ export async function createCarouselCreative(token, accountId, {
     message: message || '',
     link: linkUrl,
     child_attachments: childAttachments,
+    multi_share_end_card: false,
+    multi_share_optimized: false,
   };
+  if (cta && cta !== 'NO_BUTTON') {
+    linkData.call_to_action = { type: cta, value: { link: linkUrl } };
+  }
 
   const objectStorySpec = {
     page_id: pageId,
@@ -569,6 +576,7 @@ export async function createCarouselCreative(token, accountId, {
     object_story_spec: JSON.stringify(objectStorySpec),
     degrees_of_freedom_spec: JSON.stringify(degreesOfFreedomSpec),
   });
+  if (urlTags) params.set('url_tags', urlTags);
 
   const res = await fetch(
     `${META_API_BASE}/${actId(accountId)}/adcreatives`,
