@@ -147,46 +147,33 @@ export async function getInstagramAccounts(token, pageId, { pageToken, accountId
   const results = [];
   const seen = new Set();
   const add = (ig) => { if (!seen.has(ig.id)) { seen.add(ig.id); results.push(ig); } };
-
-  // 1. Try instagram_business_account with page token (most reliable)
   const tokenForPage = pageToken || token;
-  try {
-    const res = await fetch(
-      `${META_API_BASE}/${pageId}?fields=instagram_business_account{id,username,profile_picture_url}`,
-      { headers: getHeaders(tokenForPage) }
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data.instagram_business_account) add(data.instagram_business_account);
-    }
-  } catch {}
 
-  // 2. Try page's instagram_accounts endpoint
-  try {
-    const res = await fetch(
-      `${META_API_BASE}/${pageId}/instagram_accounts?fields=id,username,profile_pic`,
-      { headers: getHeaders(tokenForPage) }
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data.data) data.data.forEach(add);
-    }
-  } catch {}
+  // Run all approaches in parallel for speed
+  const [r1, r2, r3, r4] = await Promise.allSettled([
+    // 1. instagram_business_account (linked IG business/creator)
+    fetch(`${META_API_BASE}/${pageId}?fields=instagram_business_account{id,username,profile_picture_url}`, { headers: getHeaders(tokenForPage) })
+      .then((r) => r.ok ? r.json() : null),
+    // 2. page instagram_accounts edge
+    fetch(`${META_API_BASE}/${pageId}/instagram_accounts?fields=id,username,profile_pic`, { headers: getHeaders(tokenForPage) })
+      .then((r) => r.ok ? r.json() : null),
+    // 3. page_backed_instagram_accounts (auto-created IG for any FB page)
+    fetch(`${META_API_BASE}/${pageId}/page_backed_instagram_accounts?fields=id,username,profile_pic`, { headers: getHeaders(token) })
+      .then((r) => r.ok ? r.json() : null),
+    // 4. ad account level (all IG accounts available to the ad account)
+    accountId
+      ? fetch(`${META_API_BASE}/${actId(accountId)}/instagram_accounts?fields=id,username,profile_picture_url`, { headers: getHeaders(token) })
+          .then((r) => r.ok ? r.json() : null)
+      : Promise.resolve(null),
+  ]);
 
-  // 3. Fallback: ad account level endpoint (works without page token)
-  if (results.length === 0 && accountId) {
-    try {
-      const res = await fetch(
-        `${META_API_BASE}/${actId(accountId)}/instagram_accounts?fields=id,username,profile_picture_url`,
-        { headers: getHeaders(token) }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (data.data) data.data.forEach(add);
-      }
-    } catch {}
-  }
+  // Process results in priority order
+  if (r1.value?.instagram_business_account) add(r1.value.instagram_business_account);
+  if (r2.value?.data) r2.value.data.forEach(add);
+  if (r3.value?.data) r3.value.data.forEach(add);
+  if (r4.value?.data) r4.value.data.forEach(add);
 
+  console.log(`[IG] Page ${pageId}: found ${results.length} accounts`, results.map((r) => `${r.username || r.id}`));
   return results;
 }
 
