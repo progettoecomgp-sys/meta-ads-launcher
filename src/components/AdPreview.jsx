@@ -7,7 +7,7 @@ const CTA_LABELS = {
   WHATSAPP_MESSAGE: 'Send Message', NO_BUTTON: '',
 };
 
-function CardMedia({ file }) {
+function CardMedia({ file, contain }) {
   const [url, setUrl] = useState(null);
   const isImage = file?.type?.startsWith('image/');
 
@@ -18,10 +18,11 @@ function CardMedia({ file }) {
     return () => URL.revokeObjectURL(u);
   }, [file]);
 
+  const fit = contain ? 'object-contain' : 'object-cover';
   if (!url) return <div className="w-full h-full bg-bg" />;
   return isImage
-    ? <img src={url} alt="" className="w-full h-full object-cover" />
-    : <video src={url} className="w-full h-full object-cover" controls muted autoPlay loop playsInline />;
+    ? <img src={url} alt="" className={`w-full h-full ${fit}`} />
+    : <video src={url} className={`w-full h-full ${fit}`} controls muted autoPlay loop playsInline />;
 }
 
 export default function AdPreview({ file, files, primaryText, headline, description, cta, pageName, websiteUrl, isCarousel, cards }) {
@@ -210,9 +211,9 @@ export default function AdPreview({ file, files, primaryText, headline, descript
         /* ========== INSTAGRAM STORY PREVIEW ========== */
         <div className="relative bg-black rounded-2xl overflow-hidden max-w-[240px]" style={{ aspectRatio: '9/16' }}>
           {isCarousel && carouselCards.length > 0 ? (
-            <CardMedia file={carouselCards[activeCard]?.file} />
+            <CardMedia file={carouselCards[activeCard]?.file} contain />
           ) : (
-            <CardMedia file={file} />
+            <CardMedia file={file} contain />
           )}
 
           {/* Story top bar */}

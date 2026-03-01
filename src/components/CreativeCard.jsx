@@ -11,7 +11,7 @@ function getFileExt(name) {
   return name.split('.').pop().toUpperCase();
 }
 
-export default function CreativeCard({ creative, index, onToggleCustom, onUpdateField, onRemove }) {
+export default function CreativeCard({ creative, index, onToggleCustom, onUpdateField, onRemove, isCarousel, isFirst, isLast, onMove, globalCopy }) {
   const [thumbnail, setThumbnail] = useState(null);
   const isImage = ACCEPTED_IMAGE_TYPES.includes(creative.file.type);
 
@@ -80,8 +80,28 @@ export default function CreativeCard({ creative, index, onToggleCustom, onUpdate
           <span className="text-xs text-success font-medium">Ready</span>
         </div>
 
-        {/* Custom toggle + remove */}
+        {/* Reorder (carousel only) + Custom toggle + remove */}
         <div className="flex items-center gap-2 flex-shrink-0">
+          {isCarousel && (
+            <div className="flex flex-col gap-0.5">
+              <button
+                onClick={() => onMove(creative.id, -1)}
+                disabled={isFirst}
+                title="Move up"
+                className="w-5 h-5 rounded bg-bg border border-border text-text-secondary hover:bg-accent hover:text-white hover:border-accent transition-colors flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+              </button>
+              <button
+                onClick={() => onMove(creative.id, 1)}
+                disabled={isLast}
+                title="Move down"
+                className="w-5 h-5 rounded bg-bg border border-border text-text-secondary hover:bg-accent hover:text-white hover:border-accent transition-colors flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              </button>
+            </div>
+          )}
           <label className="flex items-center gap-1.5 cursor-pointer select-none" title="Use custom copy for this creative">
             <input
               type="checkbox"
@@ -106,13 +126,13 @@ export default function CreativeCard({ creative, index, onToggleCustom, onUpdate
       {/* Inline custom fields */}
       {creative.useCustomCopy && (
         <div className="px-3 pb-3 pt-1 border-t border-border bg-bg/50 space-y-2">
-          <div className="text-xs font-medium text-accent mb-1">Custom copy for this creative</div>
+          <div className="text-xs font-medium text-accent mb-1">Override — lascia vuoto per usare il valore globale</div>
           <textarea
             rows={2}
             value={creative.primaryText}
             onChange={(e) => onUpdateField(creative.id, 'primaryText', e.target.value)}
             className="w-full border border-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent resize-none bg-white"
-            placeholder="Primary Text..."
+            placeholder={globalCopy?.primaryText || 'Primary Text...'}
           />
           <div className="grid grid-cols-2 gap-2">
             <input
@@ -120,14 +140,14 @@ export default function CreativeCard({ creative, index, onToggleCustom, onUpdate
               value={creative.headline}
               onChange={(e) => onUpdateField(creative.id, 'headline', e.target.value)}
               className="border border-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent bg-white"
-              placeholder="Headline..."
+              placeholder={globalCopy?.headline || 'Headline...'}
             />
             <input
               type="text"
               value={creative.description}
               onChange={(e) => onUpdateField(creative.id, 'description', e.target.value)}
               className="border border-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent bg-white"
-              placeholder="Description..."
+              placeholder={globalCopy?.description || 'Description...'}
             />
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -136,7 +156,7 @@ export default function CreativeCard({ creative, index, onToggleCustom, onUpdate
               value={creative.linkUrl}
               onChange={(e) => onUpdateField(creative.id, 'linkUrl', e.target.value)}
               className="border border-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent bg-white"
-              placeholder="Link URL..."
+              placeholder="Link URL (override)..."
             />
             <select
               value={creative.cta}
