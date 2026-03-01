@@ -25,6 +25,82 @@ function loadForm() {
 
 const STATUS_LABELS = { 1: 'Active', 2: 'Disabled', 3: 'Unsettled', 7: 'Pending Review', 8: 'Pending Closure', 9: 'In Grace Period', 100: 'Temporarily Unavailable', 101: 'Closed' };
 
+function IgAccountPicker({ igAccounts, selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const selectedIg = igAccounts.find((ig) => ig.id === selected);
+
+  const getPicUrl = (ig) =>
+    ig?.profile_picture_url || ig?.profile_pic || `https://graph.facebook.com/${ig.id}/picture?type=small`;
+
+  const getDisplayName = (ig) => ig?.username ? `@${ig.username}` : (ig?.name || ig?.id);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent bg-white flex items-center gap-2.5 min-h-[38px] text-left"
+      >
+        {selectedIg ? (
+          <>
+            <img src={getPicUrl(selectedIg)} alt="" className="w-6 h-6 rounded-full object-cover flex-shrink-0" onError={(e) => { e.target.style.display = 'none'; }} />
+            <span className="flex-1 truncate">{getDisplayName(selectedIg)}</span>
+            <span className="text-xs text-text-secondary">{selectedIg.id}</span>
+          </>
+        ) : (
+          <span className="text-text-secondary flex-1">No Instagram account</span>
+        )}
+        <svg className={`w-4 h-4 text-text-secondary transition-transform flex-shrink-0 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-full bg-white border border-border rounded-lg shadow-lg max-h-[240px] overflow-y-auto">
+          <button
+            type="button"
+            onClick={() => { onChange(''); setOpen(false); }}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-bg transition-colors ${!selected ? 'bg-accent/5' : ''}`}
+          >
+            <span className="text-text-secondary">No Instagram account</span>
+          </button>
+          {igAccounts.map((ig) => {
+            const isSelected = ig.id === selected;
+            return (
+              <button
+                key={ig.id}
+                type="button"
+                onClick={() => { onChange(ig.id); setOpen(false); }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-bg transition-colors ${isSelected ? 'bg-accent/5' : ''}`}
+              >
+                <img src={getPicUrl(ig)} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0" onError={(e) => { e.target.onerror = null; e.target.src = ''; e.target.style.display = 'none'; }} />
+                <div className="flex-1 min-w-0">
+                  <p className={`truncate ${isSelected ? 'font-medium text-accent' : ''}`}>{getDisplayName(ig)}</p>
+                  <p className="text-[10px] text-text-secondary">{ig.id}</p>
+                </div>
+                {isSelected && (
+                  <svg className="w-4 h-4 text-accent flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdAccountBar({ adAccounts, settings, setSettings, inputCls }) {
   const selectedAcc = adAccounts.find((a) => a.id === `act_${settings.adAccountId}`);
   const accStatus = selectedAcc?.account_status;
@@ -1012,10 +1088,7 @@ export default function Upload() {
                 Instagram Account <span className="font-normal">(optional)</span>
               </label>
               {igAccounts.length > 0 ? (
-                <select value={selectedIgAccount} onChange={(e) => setSelectedIgAccount(e.target.value)} className={inputCls}>
-                  <option value="">No Instagram account</option>
-                  {igAccounts.map((ig) => <option key={ig.id} value={ig.id}>{ig.username || ig.name || ig.id}</option>)}
-                </select>
+                <IgAccountPicker igAccounts={igAccounts} selected={selectedIgAccount} onChange={setSelectedIgAccount} />
               ) : (
                 <input type="text" value={selectedIgAccount} onChange={(e) => setSelectedIgAccount(e.target.value)} className={inputCls} placeholder="Instagram Account ID (optional)" />
               )}
