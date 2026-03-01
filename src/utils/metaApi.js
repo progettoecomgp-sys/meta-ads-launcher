@@ -186,6 +186,15 @@ export async function getInstagramAccounts(token, pageId, { pageToken, accountId
   if (r3?.data) r3.data.forEach(add);
   if (r4?.data) r4.data.forEach(add);
 
+  // Enrich accounts that are missing username — fetch details from IG Graph API
+  await Promise.all(results.map(async (ig) => {
+    if (ig.username) return;
+    const detail = await safeFetch(`detail/${ig.id}`, `${META_API_BASE}/${ig.id}?fields=username,name,profile_picture_url`, tokenForPage);
+    if (detail?.username) ig.username = detail.username;
+    if (detail?.name && !ig.name) ig.name = detail.name;
+    if (detail?.profile_picture_url && !ig.profile_picture_url) ig.profile_picture_url = detail.profile_picture_url;
+  }));
+
   console.log(`[IG] Page ${pageId}: found ${results.length} accounts`, results.map((r) => `${r.username || r.name || r.id}`));
   return results;
 }
