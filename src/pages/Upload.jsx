@@ -222,13 +222,15 @@ export default function Upload() {
   // ---- API: Load IG accounts ----
   useEffect(() => {
     if (!settings.accessToken || !selectedPage) { setIgAccounts([]); return; }
-    api.getInstagramAccounts(settings.accessToken, selectedPage)
+    const pageObj = pages.find((p) => p.id === selectedPage);
+    const pageToken = pageObj?.access_token || settings.accessToken;
+    api.getInstagramAccounts(pageToken, selectedPage)
       .then((data) => {
         setIgAccounts(data);
         setSelectedIgAccount(data.length > 0 ? data[0].id : '');
       })
       .catch(() => { setIgAccounts([]); setSelectedIgAccount(''); });
-  }, [settings.accessToken, selectedPage]);
+  }, [settings.accessToken, selectedPage, pages]);
 
   // ---- API: Load pixels ----
   useEffect(() => {
