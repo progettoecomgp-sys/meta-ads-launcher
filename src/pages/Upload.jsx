@@ -304,8 +304,15 @@ export default function Upload() {
       accountId: settings.adAccountId,
     })
       .then((data) => {
-        setIgAccounts(data);
-        setSelectedIgAccount(data.length > 0 ? data[0].id : '');
+        // Enrich IG accounts that only have an ID with the page's name/picture
+        const enriched = data.map((ig) => ({
+          ...ig,
+          username: ig.username || undefined,
+          name: ig.name || pageObj?.name || undefined,
+          profile_picture_url: ig.profile_picture_url || ig.profile_pic || pageObj?.picture?.data?.url || undefined,
+        }));
+        setIgAccounts(enriched);
+        setSelectedIgAccount(enriched.length > 0 ? enriched[0].id : '');
       })
       .catch(() => { setIgAccounts([]); setSelectedIgAccount(''); });
   }, [settings.accessToken, settings.adAccountId, selectedPage, pages]);
