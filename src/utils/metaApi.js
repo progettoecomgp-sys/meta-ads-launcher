@@ -176,7 +176,7 @@ export async function getInstagramAccounts(token, pageId, { pageToken, accountId
     // 2. page instagram_accounts edge
     safeFetch('page/instagram_accounts', `${META_API_BASE}/${pageId}/instagram_accounts?fields=id,username,profile_pic`, tokenForPage),
     // 3. page_backed_instagram_accounts (works with page token for any FB page)
-    safeFetch('page_backed', `${META_API_BASE}/${pageId}/page_backed_instagram_accounts?fields=id,name,profile_pic`, tokenForPage),
+    safeFetch('page_backed', `${META_API_BASE}/${pageId}/page_backed_instagram_accounts?fields=id,name,profile_picture_url`, tokenForPage),
     // 4. ad account level
     accountId ? safeFetch('ad_account', `${META_API_BASE}/${actId(accountId)}/instagram_accounts?fields=id,username,profile_picture_url`, token) : null,
   ]);

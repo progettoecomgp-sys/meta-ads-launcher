@@ -1014,7 +1014,7 @@ export default function Upload() {
               {igAccounts.length > 0 ? (
                 <select value={selectedIgAccount} onChange={(e) => setSelectedIgAccount(e.target.value)} className={inputCls}>
                   <option value="">No Instagram account</option>
-                  {igAccounts.map((ig) => <option key={ig.id} value={ig.id}>{ig.username || ig.id}</option>)}
+                  {igAccounts.map((ig) => <option key={ig.id} value={ig.id}>{ig.username || ig.name || ig.id}</option>)}
                 </select>
               ) : (
                 <input type="text" value={selectedIgAccount} onChange={(e) => setSelectedIgAccount(e.target.value)} className={inputCls} placeholder="Instagram Account ID (optional)" />
