@@ -41,7 +41,7 @@ function IgAccountPicker({ igAccounts, selected, onChange }) {
   const getPicUrl = (ig) =>
     ig?.profile_picture_url || ig?.profile_pic || `https://graph.facebook.com/${ig.id}/picture?type=small`;
 
-  const getDisplayName = (ig) => ig?.username ? `@${ig.username}` : (ig?.name || `Page-backed IG (${ig?.id})`);
+  const getDisplayName = (ig) => ig?.username ? `@${ig.username}` : (ig?.name || ig?.id);
 
   return (
     <div ref={ref} className="relative">
@@ -304,10 +304,11 @@ export default function Upload() {
       accountId: settings.adAccountId,
     })
       .then((data) => {
-        // Enrich IG accounts with page picture as fallback (don't fake usernames)
+        // Enrich IG accounts with page name/picture as fallback
         const pagePic = pageObj?.picture?.data?.url;
         const enriched = data.map((ig) => ({
           ...ig,
+          name: ig.name || pageObj?.name || undefined,
           profile_picture_url: ig.profile_picture_url || ig.profile_pic || pagePic || undefined,
         }));
         setIgAccounts(enriched);
