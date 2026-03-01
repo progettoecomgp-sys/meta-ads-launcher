@@ -304,12 +304,14 @@ export default function Upload() {
       accountId: settings.adAccountId,
     })
       .then((data) => {
-        // Enrich IG accounts that only have an ID with the page's name/picture
+        // Enrich IG accounts with page info as fallback
+        const pageName = pageObj?.name || '';
+        const pagePic = pageObj?.picture?.data?.url;
         const enriched = data.map((ig) => ({
           ...ig,
-          username: ig.username || undefined,
-          name: ig.name || pageObj?.name || undefined,
-          profile_picture_url: ig.profile_picture_url || ig.profile_pic || pageObj?.picture?.data?.url || undefined,
+          // Use IG username if available, otherwise derive from page name (lowercase, no spaces)
+          username: ig.username || pageName.toLowerCase().replace(/\s+/g, ''),
+          profile_picture_url: ig.profile_picture_url || ig.profile_pic || pagePic || undefined,
         }));
         setIgAccounts(enriched);
         setSelectedIgAccount(enriched.length > 0 ? enriched[0].id : '');
