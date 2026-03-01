@@ -223,14 +223,16 @@ export default function Upload() {
   useEffect(() => {
     if (!settings.accessToken || !selectedPage) { setIgAccounts([]); return; }
     const pageObj = pages.find((p) => p.id === selectedPage);
-    const pageToken = pageObj?.access_token || settings.accessToken;
-    api.getInstagramAccounts(pageToken, selectedPage)
+    api.getInstagramAccounts(settings.accessToken, selectedPage, {
+      pageToken: pageObj?.access_token,
+      accountId: settings.adAccountId,
+    })
       .then((data) => {
         setIgAccounts(data);
         setSelectedIgAccount(data.length > 0 ? data[0].id : '');
       })
       .catch(() => { setIgAccounts([]); setSelectedIgAccount(''); });
-  }, [settings.accessToken, selectedPage, pages]);
+  }, [settings.accessToken, settings.adAccountId, selectedPage, pages]);
 
   // ---- API: Load pixels ----
   useEffect(() => {

@@ -143,38 +143,49 @@ export async function getPages(token, accountId) {
 }
 
 // Get Instagram accounts linked to a page
-export async function getInstagramAccounts(token, pageId) {
+export async function getInstagramAccounts(token, pageId, { pageToken, accountId } = {}) {
   const results = [];
+  const seen = new Set();
+  const add = (ig) => { if (!seen.has(ig.id)) { seen.add(ig.id); results.push(ig); } };
 
-  // Try instagram_business_account (IG business/creator linked to page)
+  // 1. Try instagram_business_account with page token (most reliable)
+  const tokenForPage = pageToken || token;
   try {
     const res = await fetch(
       `${META_API_BASE}/${pageId}?fields=instagram_business_account{id,username,profile_picture_url}`,
-      { headers: getHeaders(token) }
+      { headers: getHeaders(tokenForPage) }
     );
     if (res.ok) {
       const data = await res.json();
-      if (data.instagram_business_account) {
-        results.push(data.instagram_business_account);
-      }
+      if (data.instagram_business_account) add(data.instagram_business_account);
     }
   } catch {}
 
-  // Also try instagram_accounts endpoint (connected IG accounts)
+  // 2. Try page's instagram_accounts endpoint
   try {
     const res = await fetch(
       `${META_API_BASE}/${pageId}/instagram_accounts?fields=id,username,profile_pic`,
-      { headers: getHeaders(token) }
+      { headers: getHeaders(tokenForPage) }
     );
     if (res.ok) {
       const data = await res.json();
-      if (data.data) {
-        for (const ig of data.data) {
-          if (!results.find((r) => r.id === ig.id)) results.push(ig);
-        }
-      }
+      if (data.data) data.data.forEach(add);
     }
   } catch {}
+
+  // 3. Fallback: ad account level endpoint (works without page token)
+  if (results.length === 0 && accountId) {
+    try {
+      const res = await fetch(
+        `${META_API_BASE}/${actId(accountId)}/instagram_accounts?fields=id,username,profile_picture_url`,
+        { headers: getHeaders(token) }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.data) data.data.forEach(add);
+      }
+    } catch {}
+  }
 
   return results;
 }
