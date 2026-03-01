@@ -196,7 +196,7 @@ export async function getPixels(token, accountId) {
 // Get campaigns
 export async function getCampaigns(token, accountId) {
   const res = await fetch(
-    `${META_API_BASE}/${actId(accountId)}/campaigns?fields=name,status,objective&limit=100`,
+    `${META_API_BASE}/${actId(accountId)}/campaigns?fields=name,status,objective,daily_budget,lifetime_budget,bid_strategy&limit=100`,
     { headers: getHeaders(token) }
   );
   if (!res.ok) {
@@ -210,7 +210,7 @@ export async function getCampaigns(token, accountId) {
 // Get ad sets for a campaign
 export async function getAdSets(token, campaignId) {
   const res = await fetch(
-    `${META_API_BASE}/${campaignId}/adsets?fields=name,status,daily_budget,optimization_goal`,
+    `${META_API_BASE}/${campaignId}/adsets?fields=name,status,daily_budget,optimization_goal,promoted_object,attribution_spec,bid_amount,targeting`,
     { headers: getHeaders(token) }
   );
   if (!res.ok) {

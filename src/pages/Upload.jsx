@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import DropZone from '../components/DropZone';
 import CreativeCard from '../components/CreativeCard';
@@ -42,9 +42,16 @@ function AdAccountBar({ adAccounts, settings, setSettings, inputCls }) {
         className="flex-1 border border-border rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent bg-white"
       >
         <option value="">Seleziona un ad account...</option>
-        {[...adAccounts].sort((a, b) => (a.account_status === 1 ? 0 : 1) - (b.account_status === 1 ? 0 : 1)).map((acc) => (
-          <option key={acc.id} value={acc.id}>{acc.name} ({acc.id}) — {STATUS_LABELS[acc.account_status] || 'Unknown'}</option>
-        ))}
+        {(() => {
+          const sorted = [...adAccounts].sort((a, b) => (a.account_status === 1 ? 0 : 1) - (b.account_status === 1 ? 0 : 1));
+          const firstInactiveIdx = sorted.findIndex((a) => a.account_status !== 1);
+          return sorted.map((acc, i) => (
+            <React.Fragment key={acc.id}>
+              {i === firstInactiveIdx && firstInactiveIdx > 0 && <option disabled>{'─'.repeat(30)}</option>}
+              <option value={acc.id}>{acc.name} ({acc.id}) — {STATUS_LABELS[acc.account_status] || 'Unknown'}</option>
+            </React.Fragment>
+          ));
+        })()}
       </select>
       {selectedAcc && (
         <span className={`flex items-center gap-1.5 text-xs font-medium flex-shrink-0 px-2 py-1 rounded-full ${isActive ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
@@ -250,6 +257,19 @@ export default function Upload() {
       .catch(() => {});
   }, [selectedCampaign, settings.accessToken]);
 
+  // ---- Detect CBO from selected campaign ----
+  const selectedCampaignObj = campaigns.find((c) => c.id === selectedCampaign);
+  const isCBO = !!(selectedCampaignObj?.daily_budget || selectedCampaignObj?.lifetime_budget);
+
+  // ---- Pre-fill new ad set form from existing ad sets ----
+  useEffect(() => {
+    if (!adSets.length || mode !== 'existing') return;
+    const ref = adSets.find((a) => a.status === 'ACTIVE') || adSets[0];
+    if (ref.optimization_goal) setOptimizationGoal(ref.optimization_goal);
+    if (ref.promoted_object?.pixel_id) setSelectedPixel(ref.promoted_object.pixel_id);
+    if (ref.promoted_object?.custom_event_type) setConversionEvent(ref.promoted_object.custom_event_type);
+  }, [adSets, mode]);
+
   // ---- Handlers ----
   const handleFilesSelected = useCallback((newFiles) => {
     const creatives = newFiles.map((file) => ({
@@ -368,10 +388,10 @@ export default function Upload() {
         adSetId = aset.id;
       } else if (selectedAdSet === '__new__') {
         campaignId = selectedCampaign;
-        const budgetCents = String(Math.round(Number(dailyBudget) * 100));
+        const budgetCents = !isCBO ? String(Math.round(Number(dailyBudget) * 100)) : undefined;
         const bidAmountCents = bidAmount ? String(Math.round(Number(bidAmount) * 100)) : undefined;
-        const minSpendCents = dailyMinSpend ? String(Math.round(Number(dailyMinSpend) * 100)) : undefined;
-        const spendCapCents = dailySpendCap ? String(Math.round(Number(dailySpendCap) * 100)) : undefined;
+        const minSpendCents = (!isCBO && dailyMinSpend) ? String(Math.round(Number(dailyMinSpend) * 100)) : undefined;
+        const spendCapCents = (!isCBO && dailySpendCap) ? String(Math.round(Number(dailySpendCap) * 100)) : undefined;
 
         setLaunchProgress({ step: 'Creating new ad set...', progress: 0, total });
         const aset = await api.createAdSet(settings.accessToken, settings.adAccountId, {
@@ -380,7 +400,9 @@ export default function Upload() {
           countries, excludedCountries, excludedRegions,
           ageMin, ageMax, gender, status: adStatus,
           startTime: startDate || undefined,
-          budgetType: 'ABO', bidStrategy: 'LOWEST_COST_WITHOUT_CAP', pixelId: selectedPixel || undefined,
+          budgetType: isCBO ? 'CBO' : 'ABO',
+          bidStrategy: selectedCampaignObj?.bid_strategy || 'LOWEST_COST_WITHOUT_CAP',
+          pixelId: selectedPixel || undefined,
           conversionEvent: selectedPixel ? conversionEvent : undefined,
           bidAmount: needsBidAmount ? bidAmountCents : undefined,
           attributionSetting: selectedPixel ? attributionSetting : undefined,
@@ -604,7 +626,16 @@ export default function Upload() {
                   <label className="block text-xs font-medium text-text-secondary mb-1">Campaign</label>
                   <select value={selectedCampaign} onChange={(e) => { setSelectedCampaign(e.target.value); setSelectedAdSet(''); setNewAdSetMode(false); }} className={inputCls}>
                     <option value="">Select a campaign...</option>
-                    {[...campaigns].sort((a, b) => (a.status === 'ACTIVE' ? 0 : 1) - (b.status === 'ACTIVE' ? 0 : 1)).map((c) => <option key={c.id} value={c.id}>{c.name} — {c.status}</option>)}
+                    {(() => {
+                      const sorted = [...campaigns].sort((a, b) => (a.status === 'ACTIVE' ? 0 : 1) - (b.status === 'ACTIVE' ? 0 : 1));
+                      const firstInactiveIdx = sorted.findIndex((c) => c.status !== 'ACTIVE');
+                      return sorted.map((c, i) => (
+                        <React.Fragment key={c.id}>
+                          {i === firstInactiveIdx && firstInactiveIdx > 0 && <option disabled>{'─'.repeat(30)}</option>}
+                          <option value={c.id}>{c.name} — {c.status}</option>
+                        </React.Fragment>
+                      ));
+                    })()}
                   </select>
                 </div>
                 <div>
@@ -615,25 +646,39 @@ export default function Upload() {
                     setNewAdSetMode(val === '__new__');
                   }} className={inputCls}>
                     <option value="">Select an ad set...</option>
-                    {[...adSets].sort((a, b) => (a.status === 'ACTIVE' ? 0 : 1) - (b.status === 'ACTIVE' ? 0 : 1)).map((a) => <option key={a.id} value={a.id}>{a.name} — {a.status}</option>)}
+                    {(() => {
+                      const sorted = [...adSets].sort((a, b) => (a.status === 'ACTIVE' ? 0 : 1) - (b.status === 'ACTIVE' ? 0 : 1));
+                      const firstInactiveIdx = sorted.findIndex((a) => a.status !== 'ACTIVE');
+                      return sorted.map((a, i) => (
+                        <React.Fragment key={a.id}>
+                          {i === firstInactiveIdx && firstInactiveIdx > 0 && <option disabled>{'─'.repeat(30)}</option>}
+                          <option value={a.id}>{a.name} — {a.status}</option>
+                        </React.Fragment>
+                      ));
+                    })()}
                     <option value="__new__">+ Create new ad set</option>
                   </select>
                 </div>
                 {newAdSetMode && (
                   <div className="bg-accent/5 rounded-lg p-4 space-y-3 border border-accent/20">
-                    <h3 className="text-xs font-semibold text-accent">New Ad Set</h3>
+                    <h3 className="text-xs font-semibold text-accent">New Ad Set {isCBO && <span className="font-normal text-text-secondary">(CBO — budget at campaign level)</span>}</h3>
                     <div>
                       <label className="block text-xs font-medium text-text-secondary mb-1">Ad Set Name</label>
                       <input type="text" value={adSetName} onChange={(e) => setAdSetName(e.target.value)} className={inputCls} placeholder="es. Italy 18-65 All" />
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-text-secondary mb-1">Daily Budget ($)</label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary">$</span>
-                        <input type="number" step="0.01" min="1" value={dailyBudget} onChange={(e) => setDailyBudget(e.target.value)} className={`${inputCls} pl-7`} />
+
+                    {!isCBO && (
+                      <div>
+                        <label className="block text-xs font-medium text-text-secondary mb-1">Daily Budget ($)</label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary">$</span>
+                          <input type="number" step="0.01" min="1" value={dailyBudget} onChange={(e) => setDailyBudget(e.target.value)} className={`${inputCls} pl-7`} />
+                        </div>
                       </div>
-                    </div>
+                    )}
+
                     <Select label="Optimization Goal" value={optimizationGoal} onChange={setOptimizationGoal} options={OPTIMIZATION_GOALS} />
+
                     <div>
                       <label className="block text-xs font-medium text-text-secondary mb-1">Dataset (Pixel)</label>
                       <select value={selectedPixel} onChange={(e) => setSelectedPixel(e.target.value)} className={inputCls}>
@@ -644,11 +689,66 @@ export default function Upload() {
                     {selectedPixel && (
                       <Select label="Conversion Event" value={conversionEvent} onChange={setConversionEvent} options={CONVERSION_EVENTS} />
                     )}
+
                     <Select label="Attribution Model" value={attributionSetting} onChange={setAttributionSetting} options={ATTRIBUTION_SETTINGS} />
+
                     <div>
-                      <label className="block text-xs font-medium text-text-secondary mb-1">Countries</label>
-                      <CountryPicker selected={countries} onChange={setCountries} />
+                      <label className="block text-xs font-medium text-text-secondary mb-1">Data di inizio</label>
+                      <DateTimePicker value={startDate} onChange={setStartDate} placeholder="Inizia subito" />
+                      <p className="text-xs text-text-secondary mt-1">Lascia vuoto per iniziare subito</p>
                     </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-text-secondary mb-1">Countries & Regions</label>
+                      <CountryPicker selected={countries} onChange={setCountries} />
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !showExclusions;
+                          setShowExclusions(next);
+                          if (!next) { setExcludedCountries([]); setExcludedRegions([]); }
+                        }}
+                        className={`mt-2 flex items-center gap-1.5 text-xs font-medium transition-colors ${showExclusions ? 'text-danger' : 'text-text-secondary hover:text-danger'}`}
+                      >
+                        <svg className={`w-3.5 h-3.5 transition-transform duration-150 ${showExclusions ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                        {showExclusions ? 'Esclusioni attive' : 'Aggiungi esclusioni'}
+                      </button>
+                      {showExclusions && (
+                        <div className="mt-2 space-y-2 pl-3 border-l-2 border-danger/20">
+                          <div>
+                            <span className="text-xs text-danger font-medium mb-1 block">Escludi stati</span>
+                            <CountryPicker selected={excludedCountries} onChange={setExcludedCountries} />
+                          </div>
+                          <div>
+                            <span className="text-xs text-danger font-medium mb-1 block">Escludi regioni</span>
+                            <RegionPicker selected={excludedRegions} onChange={setExcludedRegions} accessToken={settings.accessToken} countries={countries} />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {needsDsa && (
+                      <div className="bg-white/60 rounded-lg p-3 space-y-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <svg className="w-3.5 h-3.5 text-accent flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span className="text-xs font-medium text-accent">EU Digital Services Act (DSA)</span>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-text-secondary mb-1">Beneficiary</label>
+                          <input type="text" value={dsaBeneficiary} onChange={(e) => setDsaBeneficiary(e.target.value)} className={inputCls} placeholder="Name of the person or organization..." />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-text-secondary mb-1">Payor</label>
+                          <input type="text" value={dsaPayor} onChange={(e) => setDsaPayor(e.target.value)} className={inputCls} placeholder="Who is paying for these ads..." />
+                        </div>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-3 gap-3">
                       <div>
                         <label className="block text-xs font-medium text-text-secondary mb-1">Age Min</label>
@@ -660,10 +760,29 @@ export default function Upload() {
                       </div>
                       <Select label="Gender" value={gender} onChange={setGender} options={[{ value: 'all', label: 'All' }, { value: 'male', label: 'Male' }, { value: 'female', label: 'Female' }]} />
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-text-secondary mb-1">Data di inizio</label>
-                      <DateTimePicker value={startDate} onChange={setStartDate} placeholder="Inizia subito" />
-                    </div>
+
+                    {!isCBO && (
+                      <div>
+                        <label className="block text-xs font-medium text-text-secondary mb-2">Ad Set Spend Limits</label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs text-text-secondary mb-1">Daily Min Spend ($)</label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary">$</span>
+                              <input type="number" step="0.01" min="0" value={dailyMinSpend} onChange={(e) => setDailyMinSpend(e.target.value)} className={`${inputCls} pl-7`} placeholder="0.00" />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs text-text-secondary mb-1">Daily Spend Cap ($)</label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary">$</span>
+                              <input type="number" step="0.01" min="0" value={dailySpendCap} onChange={(e) => setDailySpendCap(e.target.value)} className={`${inputCls} pl-7`} placeholder="0.00" />
+                            </div>
+                          </div>
+                        </div>
+                        <p className="text-xs text-text-secondary mt-1">Leave empty for no limits</p>
+                      </div>
+                    )}
                   </div>
                 )}
               </>
