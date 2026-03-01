@@ -149,29 +149,37 @@ export async function getInstagramAccounts(token, pageId, { pageToken, accountId
   const add = (ig) => { if (!seen.has(ig.id)) { seen.add(ig.id); results.push(ig); } };
   const tokenForPage = pageToken || token;
 
-  // Run all approaches in parallel for speed
-  const [r1, r2, r3, r4] = await Promise.allSettled([
+  const safeFetch = (url, tok) => fetch(url, { headers: getHeaders(tok) }).then((r) => r.ok ? r.json() : null).catch(() => null);
+
+  // Run page-level approaches in parallel
+  const [r1, r2, r3] = await Promise.all([
     // 1. instagram_business_account (linked IG business/creator)
-    fetch(`${META_API_BASE}/${pageId}?fields=instagram_business_account{id,username,profile_picture_url}`, { headers: getHeaders(tokenForPage) })
-      .then((r) => r.ok ? r.json() : null),
+    safeFetch(`${META_API_BASE}/${pageId}?fields=instagram_business_account{id,username,profile_picture_url}`, tokenForPage),
     // 2. page instagram_accounts edge
-    fetch(`${META_API_BASE}/${pageId}/instagram_accounts?fields=id,username,profile_pic`, { headers: getHeaders(tokenForPage) })
-      .then((r) => r.ok ? r.json() : null),
-    // 3. page_backed_instagram_accounts (auto-created IG for any FB page)
-    fetch(`${META_API_BASE}/${pageId}/page_backed_instagram_accounts?fields=id,username,profile_pic`, { headers: getHeaders(token) })
-      .then((r) => r.ok ? r.json() : null),
-    // 4. ad account level (all IG accounts available to the ad account)
-    accountId
-      ? fetch(`${META_API_BASE}/${actId(accountId)}/instagram_accounts?fields=id,username,profile_picture_url`, { headers: getHeaders(token) })
-          .then((r) => r.ok ? r.json() : null)
-      : Promise.resolve(null),
+    safeFetch(`${META_API_BASE}/${pageId}/instagram_accounts?fields=id,username,profile_pic`, tokenForPage),
+    // 3. ad account level (all IG accounts available to the ad account)
+    accountId ? safeFetch(`${META_API_BASE}/${actId(accountId)}/instagram_accounts?fields=id,username,profile_picture_url`, token) : null,
   ]);
 
-  // Process results in priority order
-  if (r1.value?.instagram_business_account) add(r1.value.instagram_business_account);
-  if (r2.value?.data) r2.value.data.forEach(add);
-  if (r3.value?.data) r3.value.data.forEach(add);
-  if (r4.value?.data) r4.value.data.forEach(add);
+  if (r1?.instagram_business_account) add(r1.instagram_business_account);
+  if (r2?.data) r2.data.forEach(add);
+  if (r3?.data) r3.data.forEach(add);
+
+  // 4. Fallback: fetch IG accounts from all user's businesses
+  if (results.length === 0) {
+    try {
+      const bizRes = await fetch(`${META_API_BASE}/me/businesses?fields=id&limit=10`, { headers: getHeaders(token) });
+      if (bizRes.ok) {
+        const bizData = await bizRes.json();
+        const bizResults = await Promise.all((bizData.data || []).map((biz) =>
+          safeFetch(`${META_API_BASE}/${biz.id}/instagram_accounts?fields=id,username,profile_picture_url&limit=100`, token)
+        ));
+        for (const br of bizResults) {
+          if (br?.data) br.data.forEach(add);
+        }
+      }
+    } catch {}
+  }
 
   console.log(`[IG] Page ${pageId}: found ${results.length} accounts`, results.map((r) => `${r.username || r.id}`));
   return results;
