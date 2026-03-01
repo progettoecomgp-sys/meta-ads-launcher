@@ -42,8 +42,8 @@ function AdAccountBar({ adAccounts, settings, setSettings, inputCls }) {
         className="flex-1 border border-border rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent bg-white"
       >
         <option value="">Seleziona un ad account...</option>
-        {adAccounts.map((acc) => (
-          <option key={acc.id} value={acc.id}>{acc.name} ({acc.id})</option>
+        {[...adAccounts].sort((a, b) => (a.account_status === 1 ? 0 : 1) - (b.account_status === 1 ? 0 : 1)).map((acc) => (
+          <option key={acc.id} value={acc.id}>{acc.name} ({acc.id}) — {STATUS_LABELS[acc.account_status] || 'Unknown'}</option>
         ))}
       </select>
       {selectedAcc && (
@@ -81,6 +81,7 @@ export default function Upload() {
   const [selectedCampaign, setSelectedCampaign] = useState('');
   const [adSets, setAdSets] = useState([]);
   const [selectedAdSet, setSelectedAdSet] = useState('');
+  const [newAdSetMode, setNewAdSetMode] = useState(false);
 
   // Campaign fields
   const [campaignName, setCampaignName] = useState(s.campaignName || '');
@@ -217,9 +218,9 @@ export default function Upload() {
     api.getInstagramAccounts(settings.accessToken, selectedPage)
       .then((data) => {
         setIgAccounts(data);
-        if (data.length > 0 && !selectedIgAccount) setSelectedIgAccount(data[0].id);
+        setSelectedIgAccount(data.length > 0 ? data[0].id : '');
       })
-      .catch(() => setIgAccounts([]));
+      .catch(() => { setIgAccounts([]); setSelectedIgAccount(''); });
   }, [settings.accessToken, selectedPage]);
 
   // ---- API: Load pixels ----
@@ -315,7 +316,9 @@ export default function Upload() {
       if (!adSetName.trim()) { addToast('Enter an ad set name', 'error'); return; }
     } else {
       if (!selectedCampaign) { addToast('Select a campaign', 'error'); return; }
-      if (!selectedAdSet) { addToast('Select an ad set', 'error'); return; }
+      if (selectedAdSet === '__new__') {
+        if (!adSetName.trim()) { addToast('Enter a name for the new ad set', 'error'); return; }
+      } else if (!selectedAdSet) { addToast('Select an ad set', 'error'); return; }
     }
     if (files.length === 0) { addToast('Upload at least one creative', 'error'); return; }
     if (!websiteUrl.trim()) { addToast('Enter a website URL', 'error'); return; }
@@ -355,6 +358,29 @@ export default function Upload() {
           ageMin, ageMax, gender, status: adStatus,
           startTime: startDate || undefined,
           budgetType, bidStrategy, budgetSharing, pixelId: selectedPixel || undefined,
+          conversionEvent: selectedPixel ? conversionEvent : undefined,
+          bidAmount: needsBidAmount ? bidAmountCents : undefined,
+          attributionSetting: selectedPixel ? attributionSetting : undefined,
+          dailyMinSpend: minSpendCents, dailySpendCap: spendCapCents,
+          dsaBeneficiary: needsDsa ? (dsaBeneficiary || pages.find((p) => p.id === pageId)?.name || pageId) : undefined,
+          dsaPayor: needsDsa ? (dsaPayor || pages.find((p) => p.id === pageId)?.name || pageId) : undefined,
+        });
+        adSetId = aset.id;
+      } else if (selectedAdSet === '__new__') {
+        campaignId = selectedCampaign;
+        const budgetCents = String(Math.round(Number(dailyBudget) * 100));
+        const bidAmountCents = bidAmount ? String(Math.round(Number(bidAmount) * 100)) : undefined;
+        const minSpendCents = dailyMinSpend ? String(Math.round(Number(dailyMinSpend) * 100)) : undefined;
+        const spendCapCents = dailySpendCap ? String(Math.round(Number(dailySpendCap) * 100)) : undefined;
+
+        setLaunchProgress({ step: 'Creating new ad set...', progress: 0, total });
+        const aset = await api.createAdSet(settings.accessToken, settings.adAccountId, {
+          name: adSetName, campaignId, dailyBudget: budgetCents, optimizationGoal,
+          billingEvent: 'IMPRESSIONS',
+          countries, excludedCountries, excludedRegions,
+          ageMin, ageMax, gender, status: adStatus,
+          startTime: startDate || undefined,
+          budgetType: 'ABO', bidStrategy: 'LOWEST_COST_WITHOUT_CAP', pixelId: selectedPixel || undefined,
           conversionEvent: selectedPixel ? conversionEvent : undefined,
           bidAmount: needsBidAmount ? bidAmountCents : undefined,
           attributionSetting: selectedPixel ? attributionSetting : undefined,
@@ -576,18 +602,70 @@ export default function Upload() {
               <>
                 <div>
                   <label className="block text-xs font-medium text-text-secondary mb-1">Campaign</label>
-                  <select value={selectedCampaign} onChange={(e) => { setSelectedCampaign(e.target.value); setSelectedAdSet(''); }} className={inputCls}>
+                  <select value={selectedCampaign} onChange={(e) => { setSelectedCampaign(e.target.value); setSelectedAdSet(''); setNewAdSetMode(false); }} className={inputCls}>
                     <option value="">Select a campaign...</option>
-                    {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.status})</option>)}
+                    {[...campaigns].sort((a, b) => (a.status === 'ACTIVE' ? 0 : 1) - (b.status === 'ACTIVE' ? 0 : 1)).map((c) => <option key={c.id} value={c.id}>{c.name} — {c.status}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-text-secondary mb-1">Ad Set</label>
-                  <select value={selectedAdSet} onChange={(e) => setSelectedAdSet(e.target.value)} className={inputCls}>
+                  <select value={selectedAdSet} onChange={(e) => {
+                    const val = e.target.value;
+                    setSelectedAdSet(val);
+                    setNewAdSetMode(val === '__new__');
+                  }} className={inputCls}>
                     <option value="">Select an ad set...</option>
-                    {adSets.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.status})</option>)}
+                    {[...adSets].sort((a, b) => (a.status === 'ACTIVE' ? 0 : 1) - (b.status === 'ACTIVE' ? 0 : 1)).map((a) => <option key={a.id} value={a.id}>{a.name} — {a.status}</option>)}
+                    <option value="__new__">+ Create new ad set</option>
                   </select>
                 </div>
+                {newAdSetMode && (
+                  <div className="bg-accent/5 rounded-lg p-4 space-y-3 border border-accent/20">
+                    <h3 className="text-xs font-semibold text-accent">New Ad Set</h3>
+                    <div>
+                      <label className="block text-xs font-medium text-text-secondary mb-1">Ad Set Name</label>
+                      <input type="text" value={adSetName} onChange={(e) => setAdSetName(e.target.value)} className={inputCls} placeholder="es. Italy 18-65 All" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-text-secondary mb-1">Daily Budget ($)</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary">$</span>
+                        <input type="number" step="0.01" min="1" value={dailyBudget} onChange={(e) => setDailyBudget(e.target.value)} className={`${inputCls} pl-7`} />
+                      </div>
+                    </div>
+                    <Select label="Optimization Goal" value={optimizationGoal} onChange={setOptimizationGoal} options={OPTIMIZATION_GOALS} />
+                    <div>
+                      <label className="block text-xs font-medium text-text-secondary mb-1">Dataset (Pixel)</label>
+                      <select value={selectedPixel} onChange={(e) => setSelectedPixel(e.target.value)} className={inputCls}>
+                        <option value="">No pixel</option>
+                        {pixels.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.id})</option>)}
+                      </select>
+                    </div>
+                    {selectedPixel && (
+                      <Select label="Conversion Event" value={conversionEvent} onChange={setConversionEvent} options={CONVERSION_EVENTS} />
+                    )}
+                    <Select label="Attribution Model" value={attributionSetting} onChange={setAttributionSetting} options={ATTRIBUTION_SETTINGS} />
+                    <div>
+                      <label className="block text-xs font-medium text-text-secondary mb-1">Countries</label>
+                      <CountryPicker selected={countries} onChange={setCountries} />
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-text-secondary mb-1">Age Min</label>
+                        <input type="number" min="13" max="65" value={ageMin} onChange={(e) => setAgeMin(e.target.value)} className={inputCls} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-text-secondary mb-1">Age Max</label>
+                        <input type="number" min="13" max="65" value={ageMax} onChange={(e) => setAgeMax(e.target.value)} className={inputCls} />
+                      </div>
+                      <Select label="Gender" value={gender} onChange={setGender} options={[{ value: 'all', label: 'All' }, { value: 'male', label: 'Male' }, { value: 'female', label: 'Female' }]} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-text-secondary mb-1">Data di inizio</label>
+                      <DateTimePicker value={startDate} onChange={setStartDate} placeholder="Inizia subito" />
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -1008,7 +1086,10 @@ export default function Upload() {
               ) : (
                 <>
                   <div className="flex justify-between"><span className="text-text-secondary">Campaign</span><span className="font-medium">{campaigns.find((c) => c.id === selectedCampaign)?.name}</span></div>
-                  <div className="flex justify-between"><span className="text-text-secondary">Ad Set</span><span className="font-medium">{adSets.find((a) => a.id === selectedAdSet)?.name}</span></div>
+                  <div className="flex justify-between"><span className="text-text-secondary">Ad Set{selectedAdSet === '__new__' ? ' (new)' : ''}</span><span className="font-medium">{selectedAdSet === '__new__' ? adSetName : adSets.find((a) => a.id === selectedAdSet)?.name}</span></div>
+                  {selectedAdSet === '__new__' && (
+                    <div className="flex justify-between"><span className="text-text-secondary">Budget</span><span className="font-medium">${Number(dailyBudget).toFixed(2)}/day</span></div>
+                  )}
                 </>
               )}
               <hr className="border-border" />
