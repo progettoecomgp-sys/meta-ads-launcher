@@ -8,8 +8,8 @@ primary_region = 'fra'
 
 [build]
   [build.args]
-    VITE_SUPABASE_URL = "https://hmrjogyixuosihaopzac.supabase.co"
-    VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtcmpvZ3lpeHVvc2loYW9wemFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyMTExMTAsImV4cCI6MjA4Nzc4NzExMH0.ukyiDgfcX2DLv65W5VC4wl8dNw4ATYQJTopimZ-eKyA"
+    VITE_SUPABASE_URL = "https://tbmpogjcfopnmcgdbzox.supabase.co"
+    VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRibXBvZ2pjZm9wbm1jZ2Riem94Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3ODgyNzAsImV4cCI6MjA4ODM2NDI3MH0.bmYY3aEmW32eXGwWCTKkQ-n7YrtonspGKJFs9IZQi0Q"
 
 [http_service]
   internal_port = 80

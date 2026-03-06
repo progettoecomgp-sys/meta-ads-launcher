@@ -2,7 +2,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth();
+  const { user, loading, passwordRecovery } = useAuth();
 
   if (loading) {
     return (
@@ -10,6 +10,10 @@ export default function ProtectedRoute({ children }) {
         <div className="w-8 h-8 border-3 border-accent border-t-transparent rounded-full animate-spin" />
       </div>
     );
+  }
+
+  if (passwordRecovery) {
+    return <Navigate to="/reset-password" replace />;
   }
 
   if (!user) {

@@ -11,6 +11,7 @@ import RegionPicker from '../components/RegionPicker';
 import DateTimePicker from '../components/DateTimePicker';
 import PagePicker from '../components/PagePicker';
 import * as api from '../utils/metaApi';
+import { getApiLog, onApiLogChange } from '../utils/metaApi';
 
 let nextId = 1;
 
@@ -37,11 +38,20 @@ function IgAccountPicker({ igAccounts, selected, onChange }) {
   }, [open]);
 
   const selectedIg = igAccounts.find((ig) => ig.id === selected);
+  const hasRealAccounts = igAccounts.some((ig) => !ig.pageBacked);
 
   const getPicUrl = (ig) =>
     ig?.profile_picture_url || ig?.profile_pic || `https://graph.facebook.com/${ig.id}/picture?type=small`;
 
-  const getDisplayName = (ig) => ig?.username ? `@${ig.username}` : (ig?.name || ig?.id);
+  const getDisplayName = (ig) => {
+    if (ig.pageBacked) return ig.name || 'Pagina Facebook';
+    return ig?.username ? `@${ig.username}` : (ig?.name || ig?.id);
+  };
+
+  const getSubLabel = (ig) => {
+    if (ig.pageBacked) return 'Usa la pagina Facebook come identità IG';
+    return ig.id;
+  };
 
   return (
     <div ref={ref} className="relative">
@@ -53,8 +63,11 @@ function IgAccountPicker({ igAccounts, selected, onChange }) {
         {selectedIg ? (
           <>
             <img src={getPicUrl(selectedIg)} alt="" className="w-6 h-6 rounded-full object-cover flex-shrink-0" onError={(e) => { e.target.style.display = 'none'; }} />
-            <span className="flex-1 truncate">{getDisplayName(selectedIg)}</span>
-            <span className="text-xs text-text-secondary">{selectedIg.id}</span>
+            <span className="flex-1 truncate">
+              {getDisplayName(selectedIg)}
+              {selectedIg.pageBacked && <span className="text-xs text-text-secondary ml-1">(pagina FB)</span>}
+            </span>
+            {!selectedIg.pageBacked && <span className="text-xs text-text-secondary">{selectedIg.id}</span>}
           </>
         ) : (
           <span className="text-text-secondary flex-1">No Instagram account</span>
@@ -71,31 +84,53 @@ function IgAccountPicker({ igAccounts, selected, onChange }) {
             onClick={() => { onChange(''); setOpen(false); }}
             className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-bg transition-colors ${!selected ? 'bg-accent/5' : ''}`}
           >
-            <span className="text-text-secondary">No Instagram account</span>
+            <span className="text-text-secondary">Nessun account Instagram</span>
           </button>
-          {igAccounts.map((ig) => {
+          {/* Separator between real and page-backed */}
+          {igAccounts.map((ig, i) => {
             const isSelected = ig.id === selected;
+            const prevIsReal = i > 0 && !igAccounts[i - 1].pageBacked;
+            const showSeparator = ig.pageBacked && prevIsReal;
             return (
-              <button
-                key={ig.id}
-                type="button"
-                onClick={() => { onChange(ig.id); setOpen(false); }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-bg transition-colors ${isSelected ? 'bg-accent/5' : ''}`}
-              >
-                <img src={getPicUrl(ig)} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0" onError={(e) => { e.target.onerror = null; e.target.src = ''; e.target.style.display = 'none'; }} />
-                <div className="flex-1 min-w-0">
-                  <p className={`truncate ${isSelected ? 'font-medium text-accent' : ''}`}>{getDisplayName(ig)}</p>
-                  <p className="text-[10px] text-text-secondary">{ig.id}</p>
-                </div>
-                {isSelected && (
-                  <svg className="w-4 h-4 text-accent flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
+              <React.Fragment key={ig.id}>
+                {showSeparator && (
+                  <div className="px-3 py-1.5 text-[10px] font-medium text-text-secondary uppercase tracking-wide bg-bg/50 border-t border-border">
+                    Nessun account IG collegato — usa la pagina
+                  </div>
                 )}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => { onChange(ig.id); setOpen(false); }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-bg transition-colors ${isSelected ? 'bg-accent/5' : ''}`}
+                >
+                  <img src={getPicUrl(ig)} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0" onError={(e) => { e.target.onerror = null; e.target.src = ''; e.target.style.display = 'none'; }} />
+                  <div className="flex-1 min-w-0">
+                    <p className={`truncate ${isSelected ? 'font-medium text-accent' : ''}`}>
+                      {getDisplayName(ig)}
+                      {ig.pageBacked && <span className="text-xs text-text-secondary ml-1">(pagina FB)</span>}
+                    </p>
+                    <p className="text-[10px] text-text-secondary">{getSubLabel(ig)}</p>
+                  </div>
+                  {isSelected && (
+                    <svg className="w-4 h-4 text-accent flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </button>
+              </React.Fragment>
             );
           })}
         </div>
+      )}
+
+      {/* Info badge when only page-backed account is available */}
+      {!hasRealAccounts && igAccounts.length > 0 && selected && (
+        <p className="text-[10px] text-warning mt-1 flex items-center gap-1">
+          <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Nessun account IG reale collegato — le inserzioni useranno la pagina Facebook
+        </p>
       )}
     </div>
   );
@@ -219,8 +254,17 @@ export default function Upload() {
   // Launch
   const [showLaunchModal, setShowLaunchModal] = useState(false);
   const [bgLaunches, setBgLaunches] = useState([]);
-  const [adStatus, setAdStatus] = useState('PAUSED');
+  const [adStatus, setAdStatus] = useState(s.adStatus || 'PAUSED');
   const [previewIndex, setPreviewIndex] = useState(0);
+  const [showLog, setShowLog] = useState(false);
+  const [logEntries, setLogEntries] = useState([]);
+  const logEndRef = useRef(null);
+
+  // Subscribe to API log changes
+  useEffect(() => {
+    onApiLogChange(() => setLogEntries([...getApiLog()]));
+    return () => onApiLogChange(null);
+  }, []);
 
   // Country presets (localStorage)
   const PRESETS_KEY = 'meta-ads-country-presets';
@@ -266,13 +310,13 @@ export default function Upload() {
       adSetName, dailyBudget, optimizationGoal, countries, excludedCountries, excludedRegions, showExclusions, ageMin, ageMax, gender, startDate,
       selectedPixel, conversionEvent, bidAmount, attributionSetting,
       dailyMinSpend, dailySpendCap, budgetSharing, dsaBeneficiary, dsaPayor,
-      selectedPage, selectedIgAccount, websiteUrl, globalCopy,
+      selectedPage, selectedIgAccount, websiteUrl, globalCopy, adStatus,
     }));
   }, [mode, creativeType, campaignName, objective, budgetType, bidStrategy,
     adSetName, dailyBudget, optimizationGoal, countries, excludedCountries, excludedRegions, showExclusions, ageMin, ageMax, gender, startDate,
     selectedPixel, conversionEvent, bidAmount, attributionSetting,
     dailyMinSpend, dailySpendCap, budgetSharing, dsaBeneficiary, dsaPayor,
-    selectedPage, selectedIgAccount, websiteUrl, globalCopy]);
+    selectedPage, selectedIgAccount, websiteUrl, globalCopy, adStatus]);
 
   // ---- API: Load ad accounts ----
   const [adAccounts, setAdAccounts] = useState([]);
@@ -457,6 +501,14 @@ export default function Upload() {
     if (!websiteUrl.trim()) { addToast('Enter a website URL', 'error'); return; }
     if (!selectedPage) { addToast('Select or enter a Facebook Page ID', 'error'); return; }
     if (creativeType === 'carousel' && files.length < 2) { addToast('Carousel needs at least 2 images', 'error'); return; }
+    if (mode === 'new' || selectedAdSet === '__new__') {
+      const budget = Number(dailyBudget);
+      if (!budget || budget <= 0) { addToast('Daily budget must be greater than 0', 'error'); return; }
+      if (Number(ageMin) > Number(ageMax)) { addToast('Min age cannot be greater than max age', 'error'); return; }
+      if (needsBidAmount && (!bidAmount || Number(bidAmount) <= 0)) { addToast('Enter a valid bid amount for the selected bid strategy', 'error'); return; }
+      if (needsRoas && (!bidAmount || Number(bidAmount) <= 0)) { addToast('Enter a valid ROAS target', 'error'); return; }
+      if (needsDsa && (!dsaBeneficiary.trim() || !dsaPayor.trim())) { addToast('DSA beneficiary and payor are required for EU targeting', 'error'); return; }
+    }
     setShowLaunchModal(true);
   };
 
@@ -496,7 +548,12 @@ export default function Upload() {
       dsaBeneficiary,
       dsaPayor,
       pageId: selectedPage,
-      igId: selectedIgAccount || undefined,
+      // Don't pass page-backed IG IDs — they're not valid as instagram_actor_id
+      igId: (() => {
+        if (!selectedIgAccount) return undefined;
+        const ig = igAccounts.find((a) => a.id === selectedIgAccount);
+        return ig?.pageBacked ? undefined : selectedIgAccount;
+      })(),
       pages: pages.map((p) => ({ ...p })),
       websiteUrl,
       globalCopy: { ...globalCopy },
@@ -512,8 +569,8 @@ export default function Upload() {
     // Close modal immediately
     setShowLaunchModal(false);
 
-    // Add background launch entry
-    setBgLaunches((prev) => [...prev, { id: launchId, name: launchName, step: 'Starting...', progress: 0, total: snap.files.length, status: 'running' }]);
+    // Add background launch entry (pct = continuous 0-100 percentage)
+    setBgLaunches((prev) => [...prev, { id: launchId, name: launchName, step: 'Starting...', pct: 0, status: 'running' }]);
 
     // Helper to update this launch's progress
     const updateLaunch = (patch) => setBgLaunches((prev) => prev.map((l) => l.id === launchId ? { ...l, ...patch } : l));
@@ -556,14 +613,14 @@ export default function Upload() {
           const minSpendCents = snap.dailyMinSpend ? String(Math.round(Number(snap.dailyMinSpend) * 100)) : undefined;
           const spendCapCents = snap.dailySpendCap ? String(Math.round(Number(snap.dailySpendCap) * 100)) : undefined;
 
-          updateLaunch({ step: 'Creating campaign...' });
+          updateLaunch({ step: 'Creating campaign...', pct: 3 });
           const camp = await api.createCampaign(snap.accessToken, snap.adAccountId, {
             name: snap.campaignName, objective: snap.objective, status: snap.adStatus, budgetType: snap.budgetType,
             dailyBudget: budgetCents, bidStrategy: snap.bidStrategy, budgetSharing: snap.budgetSharing,
           });
           campaignId = camp.id;
 
-          updateLaunch({ step: 'Creating ad set...' });
+          updateLaunch({ step: 'Creating ad set...', pct: 5 });
           const aset = await api.createAdSet(snap.accessToken, snap.adAccountId, {
             name: snap.adSetName, campaignId, dailyBudget: budgetCents, optimizationGoal: snap.optimizationGoal,
             billingEvent: 'IMPRESSIONS',
@@ -588,7 +645,7 @@ export default function Upload() {
           const minSpendCents = (!snapIsCBO && snap.dailyMinSpend) ? String(Math.round(Number(snap.dailyMinSpend) * 100)) : undefined;
           const spendCapCents = (!snapIsCBO && snap.dailySpendCap) ? String(Math.round(Number(snap.dailySpendCap) * 100)) : undefined;
 
-          updateLaunch({ step: 'Creating new ad set...' });
+          updateLaunch({ step: 'Creating new ad set...', pct: 5 });
           const aset = await api.createAdSet(snap.accessToken, snap.adAccountId, {
             name: snap.adSetName, campaignId, dailyBudget: budgetCents, optimizationGoal: snap.optimizationGoal,
             billingEvent: 'IMPRESSIONS',
@@ -612,14 +669,27 @@ export default function Upload() {
         }
 
         if (snap.creativeType === 'carousel') {
-          updateLaunch({ step: 'Uploading carousel images...', progress: 0 });
+          // Progress: upload 0-70%, creative 70-90%, ad 90-100%
+          updateLaunch({ step: 'Uploading carousel images...', pct: 2 });
           let uploadCount = 0;
-          const uploads = await Promise.all(snap.files.map(async (creative) => {
+          const carouselFileProgress = new Array(snap.files.length).fill(0);
+          const updateCarouselPct = () => {
+            const avg = carouselFileProgress.reduce((a, b) => a + b, 0) / snap.files.length;
+            updateLaunch({ pct: Math.round(avg * 70) });
+          };
+          const uploads = await Promise.all(snap.files.map(async (creative, idx) => {
             const copy = snapGetCopy(creative);
-            const upload = await api.uploadImage(snap.accessToken, snap.adAccountId, creative.file);
+            const isImage = ACCEPTED_IMAGE_TYPES.includes(creative.file.type);
+            const upload = isImage
+              ? await api.uploadImage(snap.accessToken, snap.adAccountId, creative.file)
+              : await api.uploadVideo(snap.accessToken, snap.adAccountId, creative.file, (pct) => {
+                  carouselFileProgress[idx] = pct;
+                  updateCarouselPct();
+                });
             uploadCount++;
-            updateLaunch({ step: `Uploaded ${uploadCount}/${total}`, progress: uploadCount });
-            return { upload, copy };
+            carouselFileProgress[idx] = 1;
+            updateLaunch({ step: `Uploaded ${uploadCount}/${total}`, pct: Math.round((uploadCount / total) * 70) });
+            return { upload, copy, isImage };
           }));
 
           const cards = uploads.map(({ upload, copy }) => ({
@@ -627,7 +697,7 @@ export default function Upload() {
             linkUrl: copy.linkUrl, cta: copy.cta,
           }));
 
-          updateLaunch({ step: 'Creating carousel creative...', progress: total });
+          updateLaunch({ step: 'Creating carousel creative...', pct: 75 });
           const globalUrl = snapBuildUrl(snap.websiteUrl);
           const carouselSpec = buildDegreesOfFreedomSpec(snap.enhancements, 'carousel');
           let creativeResult;
@@ -655,27 +725,39 @@ export default function Upload() {
           });
           results.push({ fileName: 'Carousel', adId: ad.id, creativeId: creativeResult.id });
         } else {
-          updateLaunch({ step: 'Uploading creatives...', progress: 0 });
+          // Progress: upload 0-50%, thumbnails 50-60%, ads 60-100%
+          updateLaunch({ step: 'Uploading creatives...', pct: 2 });
           let uploadCount = 0;
-          const uploads = await Promise.all(snap.files.map(async (creative) => {
+          // Track per-file progress for smooth bar (especially for large videos)
+          const fileProgress = new Array(snap.files.length).fill(0);
+          const updateUploadPct = () => {
+            const avg = fileProgress.reduce((a, b) => a + b, 0) / snap.files.length;
+            updateLaunch({ pct: Math.round(avg * 50) });
+          };
+          const uploads = await Promise.all(snap.files.map(async (creative, idx) => {
             const isImage = ACCEPTED_IMAGE_TYPES.includes(creative.file.type);
             const upload = isImage
               ? await api.uploadImage(snap.accessToken, snap.adAccountId, creative.file)
-              : await api.uploadVideo(snap.accessToken, snap.adAccountId, creative.file);
+              : await api.uploadVideo(snap.accessToken, snap.adAccountId, creative.file, (pct) => {
+                  fileProgress[idx] = pct;
+                  updateUploadPct();
+                  updateLaunch({ step: `Uploading ${creative.file.name} (${Math.round(pct * 100)}%)` });
+                });
             uploadCount++;
-            updateLaunch({ step: `Uploaded ${uploadCount}/${total}`, progress: uploadCount });
+            fileProgress[idx] = 1;
+            updateLaunch({ step: `Uploaded ${uploadCount}/${total}`, pct: Math.round((uploadCount / total) * 50) });
             return { creative, upload, isImage };
           }));
 
           const videoUploads = uploads.filter((u) => !u.isImage);
           if (videoUploads.length > 0) {
-            updateLaunch({ step: `Processing ${videoUploads.length} video thumbnail${videoUploads.length > 1 ? 's' : ''}...`, progress: total });
+            updateLaunch({ step: `Processing ${videoUploads.length} video thumbnail${videoUploads.length > 1 ? 's' : ''}...`, pct: 55 });
             await Promise.all(videoUploads.map(async (u) => {
               u.thumbnailUrl = await api.getVideoThumbnail(snap.accessToken, u.upload.id);
             }));
           }
 
-          updateLaunch({ step: 'Creating ads...', progress: 0 });
+          updateLaunch({ step: 'Creating ads...', pct: 60 });
           let adCount = 0;
           const adResults = await Promise.all(uploads.map(async (u) => {
             const copy = snapGetCopy(u.creative);
@@ -701,7 +783,7 @@ export default function Upload() {
               name: `Ad - ${u.creative.file.name}`, adSetId, creativeId: creativeResult.id, status: snap.adStatus,
             });
             adCount++;
-            updateLaunch({ step: `Creating ads... ${adCount}/${total}`, progress: adCount });
+            updateLaunch({ step: `Creating ads... ${adCount}/${total}`, pct: 60 + Math.round((adCount / total) * 40) });
             return { fileName: u.creative.file.name, adId: ad.id, creativeId: creativeResult.id };
           }));
           results.push(...adResults);
@@ -1220,6 +1302,20 @@ export default function Upload() {
               ) : (
                 <input type="text" value={selectedIgAccount} onChange={(e) => setSelectedIgAccount(e.target.value)} className={inputCls} placeholder="Instagram Account ID (optional)" />
               )}
+              <details className="mt-1.5">
+                <summary className="text-xs text-text-secondary cursor-pointer hover:text-text">Inserisci ID Instagram manualmente</summary>
+                <input
+                  type="text"
+                  value={selectedIgAccount}
+                  onChange={(e) => setSelectedIgAccount(e.target.value)}
+                  className={`${inputCls} mt-1`}
+                  placeholder="Instagram Account ID (es. 17841400000000)"
+                />
+                <p className="text-[10px] text-text-secondary mt-1">
+                  Se l'account non viene trovato automaticamente, puoi inserire l'ID manualmente.
+                  Lo trovi su Business Manager &gt; Account Instagram.
+                </p>
+              </details>
             </div>
           </div>
 
@@ -1438,6 +1534,7 @@ export default function Upload() {
       </Modal>
 
       {/* Background launch progress bars */}
+      {/* Background launch progress bars */}
       {bgLaunches.filter((l) => l.status === 'running' || l.status === 'error').map((launch, i) => (
         <div key={launch.id} className="fixed bottom-4 right-4 bg-white shadow-lg rounded-lg p-4 w-80 border border-border z-50" style={{ bottom: `${1 + i * 5.5}rem` }}>
           <div className="flex items-center justify-between mb-1">
@@ -1451,11 +1548,71 @@ export default function Upload() {
           <p className={`text-xs truncate ${launch.status === 'error' ? 'text-danger' : 'text-text-secondary'}`}>{launch.step}</p>
           {launch.status === 'running' && (
             <div className="w-full bg-bg rounded-full h-2 mt-2">
-              <div className="bg-accent h-2 rounded-full transition-all duration-300" style={{ width: `${launch.total > 0 ? (launch.progress / launch.total) * 100 : 5}%` }} />
+              <div className="bg-accent h-2 rounded-full transition-all duration-300" style={{ width: `${launch.pct || 2}%` }} />
             </div>
           )}
         </div>
       ))}
+
+      {/* API Log Panel */}
+      <div className="mt-6 bg-white rounded-xl border border-border overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowLog(!showLog)}
+          className="w-full flex items-center justify-between px-5 py-3 hover:bg-bg/50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            <span className="text-sm font-semibold">API Log</span>
+            {logEntries.filter((e) => e.type === 'error').length > 0 && (
+              <span className="px-1.5 py-0.5 text-[10px] font-bold bg-danger text-white rounded-full">
+                {logEntries.filter((e) => e.type === 'error').length}
+              </span>
+            )}
+          </div>
+          <svg className={`w-4 h-4 text-text-secondary transition-transform ${showLog ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {showLog && (
+          <div className="border-t border-border">
+            <div className="flex items-center justify-between px-5 py-2 bg-bg/30">
+              <span className="text-xs text-text-secondary">{logEntries.length} entries</span>
+              <button
+                type="button"
+                onClick={() => { getApiLog().length = 0; setLogEntries([]); }}
+                className="text-xs text-text-secondary hover:text-danger transition-colors"
+              >
+                Cancella log
+              </button>
+            </div>
+            <div className="max-h-[400px] overflow-y-auto font-mono text-xs divide-y divide-border/30">
+              {logEntries.length === 0 ? (
+                <div className="px-5 py-8 text-center text-text-secondary text-xs">Nessun log — le chiamate API appariranno qui</div>
+              ) : (
+                logEntries.map((entry, i) => (
+                  <div key={i} className={`px-5 py-2 ${entry.type === 'error' ? 'bg-danger/5' : ''}`}>
+                    <div className="flex items-center gap-2">
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${entry.type === 'error' ? 'bg-danger' : 'bg-success'}`} />
+                      <span className="text-text-secondary">{entry.ts}</span>
+                      <span className="font-semibold">{entry.method}</span>
+                      <span className="truncate flex-1">{entry.endpoint}</span>
+                      {entry.status && <span className={`flex-shrink-0 ${entry.type === 'error' ? 'text-danger font-bold' : 'text-success'}`}>{entry.status}</span>}
+                    </div>
+                    {entry.errorMsg && (
+                      <p className="mt-1 text-danger pl-4 break-all">{entry.errorMsg}</p>
+                    )}
+                  </div>
+                ))
+              )}
+              <div ref={logEndRef} />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

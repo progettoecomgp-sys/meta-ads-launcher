@@ -162,34 +162,14 @@ export function buildDegreesOfFreedomSpec(enhancements, creativeType) {
   // Include all known API keys — both umbrella and individual — to force OPT_OUT
   // on everything not explicitly opted in. This prevents Meta from sneakily enabling features.
   // Carousel creatives only accept umbrella keys (no individual feature keys or multi_advertiser_ads).
-  const UMBRELLA_KEYS = [
+  // Meta only accepts these 5 umbrella keys in creative_features_spec
+  const ALL_API_KEYS = [
     'standard_enhancements_catalog',
     'ig_video_native_subtitle',
     'product_metadata_automation',
     'profile_card',
     'text_overlay_translation',
   ];
-  const INDIVIDUAL_KEYS = [
-    'multi_advertiser_ads',
-    'image_enhancement',
-    'text_generation',
-    'text_optimization',
-    'image_auto_crop',
-    'image_brightness_and_contrast',
-    'video_auto_crop',
-    'image_templates',
-    'image_touchup',
-    'video_editing',
-    'description_automation',
-    'image_uncrop',
-    'music',
-    'cv_transformer',
-    'enhance_cta',
-    'site_extensions',
-    'product_extensions',
-    'inline_comment',
-  ];
-  const ALL_API_KEYS = creativeType === 'carousel' ? UMBRELLA_KEYS : [...UMBRELLA_KEYS, ...INDIVIDUAL_KEYS];
   const creative_features_spec = {};
   for (const k of ALL_API_KEYS) {
     creative_features_spec[k] = { enroll_status: apiStates[k] || 'OPT_OUT' };

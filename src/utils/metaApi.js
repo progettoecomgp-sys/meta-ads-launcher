@@ -11,35 +11,88 @@ function actId(accountId) {
 function extractError(err) {
   if (!err?.error) return 'Unknown error';
   const e = err.error;
-  // Show the most detailed message available
   if (e.error_user_msg) return e.error_user_msg;
   if (e.message) return e.message;
   return `Error ${e.code || ''}`;
 }
 
-// Test connection
-export async function testConnection(token, accountId) {
-  const res = await fetch(
-    `${META_API_BASE}/${actId(accountId)}?fields=name,account_status`,
-    { headers: getHeaders(token) }
+// ---- In-app error/API log ----
+const _apiLog = [];
+let _apiLogListener = null;
+export function getApiLog() { return _apiLog; }
+export function onApiLogChange(fn) { _apiLogListener = fn; }
+
+function pushLog(entry) {
+  _apiLog.push({ ts: new Date().toLocaleTimeString(), ...entry });
+  if (_apiLog.length > 200) _apiLog.shift();
+  _apiLogListener?.();
+}
+
+// Centralized API logger — logs every request and error with full context
+function logApi(method, endpoint, params, response) {
+  const ts = new Date().toLocaleTimeString();
+  pushLog({ type: response.ok ? 'ok' : 'error', method, endpoint, status: response.status, params });
+  if (response.ok) {
+    console.log(`%c[API] ${ts} ${method} ${endpoint} → ${response.status}`, 'color: #22c55e', params);
+  } else {
+    console.error(`%c[API] ${ts} ${method} ${endpoint} → ${response.status}`, 'color: #ef4444; font-weight: bold', params);
+  }
+}
+
+function logApiError(method, endpoint, rawError, params) {
+  const ts = new Date().toLocaleTimeString();
+  const msg = rawError?.error?.error_user_msg || rawError?.error?.message || JSON.stringify(rawError);
+  pushLog({ type: 'error', method, endpoint, params, errorMsg: msg, raw: rawError });
+  console.error(
+    `%c[API ERROR] ${ts} ${method} ${endpoint}`,
+    'color: #ef4444; font-weight: bold',
+    '\n→ Error:', rawError,
+    '\n→ Params:', params,
   );
+}
+
+// Wrapper: fetch + auto-log
+async function apiFetch(url, options, label) {
+  const method = options.method || 'GET';
+  let bodyForLog;
+  if (options.body instanceof URLSearchParams) {
+    bodyForLog = Object.fromEntries(options.body.entries());
+    // Parse JSON fields for readable logs
+    for (const k of ['object_story_spec', 'degrees_of_freedom_spec']) {
+      if (bodyForLog[k]) try { bodyForLog[k] = JSON.parse(bodyForLog[k]); } catch {}
+    }
+  } else if (options.body instanceof FormData) {
+    bodyForLog = '(FormData)';
+  }
+
+  const res = await fetch(url, options);
+  logApi(method, label || url, bodyForLog, res);
+
   if (!res.ok) {
     const err = await res.json();
-    throw new Error(err.error?.message || 'Connection failed');
+    logApiError(method, label || url, err, bodyForLog);
+    throw new Error(extractError(err));
   }
+  return res;
+}
+
+// Test connection
+export async function testConnection(token, accountId) {
+  const res = await apiFetch(
+    `${META_API_BASE}/${actId(accountId)}?fields=name,account_status`,
+    { headers: getHeaders(token) },
+    'testConnection'
+  );
   return res.json();
 }
 
 // Get ad accounts accessible by this token
 export async function getAdAccounts(token) {
-  const res = await fetch(
+  const res = await apiFetch(
     `${META_API_BASE}/me/adaccounts?fields=name,account_status,id&limit=100`,
-    { headers: getHeaders(token) }
+    { headers: getHeaders(token) },
+    'getAdAccounts'
   );
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error?.message || 'Failed to fetch ad accounts');
-  }
   const data = await res.json();
   return data.data || [];
 }
@@ -143,25 +196,37 @@ export async function getPages(token, accountId) {
 }
 
 // Get Instagram accounts linked to a page
+// Returns: [{ id, username, name, profile_picture_url, pageBacked }]
+// pageBacked = true → auto-generated shadow account (NOT valid as instagram_actor_id)
 export async function getInstagramAccounts(token, pageId, { pageToken, accountId } = {}) {
   const results = [];
   const seen = new Set();
-  const add = (ig) => { if (!seen.has(ig.id)) { seen.add(ig.id); results.push(ig); } };
-  const tokenForPage = pageToken || token;
-  const hasPageToken = !!pageToken;
+  const add = (ig, source) => {
+    if (!seen.has(ig.id)) {
+      seen.add(ig.id);
+      ig._source = source;
+      results.push(ig);
+    }
+  };
+  let tokenForPage = pageToken || token;
+  let hasPageToken = !!pageToken;
 
   const safeFetch = async (label, url, tok) => {
     try {
       const res = await fetch(url, { headers: getHeaders(tok) });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        console.warn(`[IG] ${label}: ${res.status}`, err.error?.message || '');
+        const msg = err.error?.message || `HTTP ${res.status}`;
+        pushLog({ type: 'error', method: 'GET', endpoint: `IG/${label}`, status: res.status, errorMsg: msg });
+        console.warn(`[IG] ${label}: ${res.status}`, msg);
         return null;
       }
       const data = await res.json();
+      pushLog({ type: 'ok', method: 'GET', endpoint: `IG/${label}`, status: res.status });
       console.log(`[IG] ${label}: OK`, data);
       return data;
     } catch (e) {
+      pushLog({ type: 'error', method: 'GET', endpoint: `IG/${label}`, errorMsg: e.message });
       console.warn(`[IG] ${label}: network error`, e.message);
       return null;
     }
@@ -169,74 +234,96 @@ export async function getInstagramAccounts(token, pageId, { pageToken, accountId
 
   console.log(`[IG] Fetching for page ${pageId}, hasPageToken=${hasPageToken}, accountId=${accountId || 'none'}`);
 
-  // Run all approaches in parallel
-  const [r1, r2, r3, r4] = await Promise.all([
-    // 1. instagram_business_account (linked IG business/creator)
-    safeFetch('business_account', `${META_API_BASE}/${pageId}?fields=instagram_business_account{id,username,profile_picture_url}`, tokenForPage),
+  // If we don't have a page token, try to get one — many IG endpoints require it
+  if (!hasPageToken) {
+    const ptRes = await safeFetch('get_page_token', `${META_API_BASE}/${pageId}?fields=access_token`, token);
+    if (ptRes?.access_token) {
+      tokenForPage = ptRes.access_token;
+      hasPageToken = true;
+      console.log(`[IG] Got page token for ${pageId}`);
+    }
+  }
+
+  // Run all approaches in parallel — try with BOTH page token and user token for business_account
+  const [r1, r1b, r2, r3, r4] = await Promise.all([
+    // 1a. instagram_business_account with page token
+    safeFetch('business_account(pageToken)', `${META_API_BASE}/${pageId}?fields=instagram_business_account{id,username,profile_picture_url}`, tokenForPage),
+    // 1b. instagram_business_account with user token (sometimes page token lacks permission)
+    hasPageToken ? safeFetch('business_account(userToken)', `${META_API_BASE}/${pageId}?fields=instagram_business_account{id,username,profile_picture_url}`, token) : null,
     // 2. page instagram_accounts edge
     safeFetch('page/instagram_accounts', `${META_API_BASE}/${pageId}/instagram_accounts?fields=id,username,profile_pic`, tokenForPage),
-    // 3. page_backed_instagram_accounts (works with page token for any FB page)
+    // 3. page_backed_instagram_accounts
     safeFetch('page_backed', `${META_API_BASE}/${pageId}/page_backed_instagram_accounts?fields=id,name,profile_picture_url`, tokenForPage),
     // 4. ad account level
     accountId ? safeFetch('ad_account', `${META_API_BASE}/${actId(accountId)}/instagram_accounts?fields=id,username,profile_picture_url`, token) : null,
   ]);
 
-  if (r1?.instagram_business_account) add(r1.instagram_business_account);
-  if (r2?.data) r2.data.forEach(add);
-  if (r3?.data) r3.data.forEach(add);
-  if (r4?.data) r4.data.forEach(add);
+  // Collect — order matters: business_account first (has username), then others
+  if (r1?.instagram_business_account) add(r1.instagram_business_account, 'business');
+  if (r1b?.instagram_business_account) add(r1b.instagram_business_account, 'business');
+  if (r2?.data) r2.data.forEach((ig) => add(ig, 'page_edge'));
+  if (r4?.data) r4.data.forEach((ig) => add(ig, 'ad_account'));
+  // page_backed last — only adds accounts not already found via real endpoints
+  if (r3?.data) r3.data.forEach((ig) => add(ig, 'page_backed'));
 
-  // Enrich accounts that are missing username — fetch details from IG Graph API
+  // Enrich ALL accounts that are missing username
   await Promise.all(results.map(async (ig) => {
     if (ig.username) return;
-    const detail = await safeFetch(`detail/${ig.id}`, `${META_API_BASE}/${ig.id}?fields=username,name,profile_picture_url`, tokenForPage);
+    // Try with page token first, then user token
+    let detail = await safeFetch(`enrich/${ig.id}(pageToken)`, `${META_API_BASE}/${ig.id}?fields=username,name,profile_picture_url`, tokenForPage);
+    if (!detail?.username && hasPageToken) {
+      detail = await safeFetch(`enrich/${ig.id}(userToken)`, `${META_API_BASE}/${ig.id}?fields=username,name,profile_picture_url`, token);
+    }
     if (detail?.username) ig.username = detail.username;
     if (detail?.name && !ig.name) ig.name = detail.name;
     if (detail?.profile_picture_url && !ig.profile_picture_url) ig.profile_picture_url = detail.profile_picture_url;
   }));
 
-  console.log(`[IG] Page ${pageId}: found ${results.length} accounts`, results.map((r) => `${r.username || r.name || r.id}`));
+  // Mark: has username → real, otherwise → pageBacked
+  // Exception: if found via business_account or ad_account endpoint, it's real even without username
+  for (const ig of results) {
+    ig.pageBacked = !ig.username && ig._source === 'page_backed';
+  }
+
+  // Sort: real accounts first
+  results.sort((a, b) => (a.pageBacked ? 1 : 0) - (b.pageBacked ? 1 : 0));
+
+  const realCount = results.filter((r) => !r.pageBacked).length;
+  const pbCount = results.filter((r) => r.pageBacked).length;
+  pushLog({ type: 'ok', method: 'GET', endpoint: `IG/summary: ${realCount} real, ${pbCount} page-backed`, params: results.map((r) => `${r.username || r.name || r.id} [${r._source}]${r.pageBacked ? ' (PB)' : ''}`) });
+  console.log(`[IG] Page ${pageId}: ${realCount} real, ${pbCount} page-backed`, results.map((r) => `${r.username || r.name || r.id} [${r._source}]${r.pageBacked ? ' (PB)' : ''}`));
   return results;
 }
 
 // Get pixels (datasets)
 export async function getPixels(token, accountId) {
-  const res = await fetch(
+  const res = await apiFetch(
     `${META_API_BASE}/${actId(accountId)}/adspixels?fields=name,id`,
-    { headers: getHeaders(token) }
+    { headers: getHeaders(token) },
+    'getPixels'
   );
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error?.message || 'Failed to fetch pixels');
-  }
   const data = await res.json();
   return data.data || [];
 }
 
 // Get campaigns
 export async function getCampaigns(token, accountId) {
-  const res = await fetch(
+  const res = await apiFetch(
     `${META_API_BASE}/${actId(accountId)}/campaigns?fields=name,status,objective,daily_budget,lifetime_budget,bid_strategy&limit=100`,
-    { headers: getHeaders(token) }
+    { headers: getHeaders(token) },
+    'getCampaigns'
   );
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error?.message || 'Failed to fetch campaigns');
-  }
   const data = await res.json();
   return data.data || [];
 }
 
 // Get ad sets for a campaign
 export async function getAdSets(token, campaignId) {
-  const res = await fetch(
+  const res = await apiFetch(
     `${META_API_BASE}/${campaignId}/adsets?fields=name,status,daily_budget,optimization_goal,promoted_object,attribution_spec,bid_amount,targeting`,
-    { headers: getHeaders(token) }
+    { headers: getHeaders(token) },
+    'getAdSets'
   );
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error?.message || 'Failed to fetch ad sets');
-  }
   const data = await res.json();
   return data.data || [];
 }
@@ -262,20 +349,11 @@ export async function createCampaign(token, accountId, { name, objective, status
     params.append('is_adset_budget_sharing_enabled', budgetSharing ? 'true' : 'false');
   }
 
-  console.log('[Meta API] createCampaign params:', Object.fromEntries(params));
-  const res = await fetch(
+  const res = await apiFetch(
     `${META_API_BASE}/${actId(accountId)}/campaigns`,
-    {
-      method: 'POST',
-      headers: getHeaders(token),
-      body: params,
-    }
+    { method: 'POST', headers: getHeaders(token), body: params },
+    'createCampaign'
   );
-  if (!res.ok) {
-    const err = await res.json();
-    console.error('[Meta API] createCampaign error:', err);
-    throw new Error(extractError(err));
-  }
   return res.json();
 }
 
@@ -360,20 +438,11 @@ export async function createAdSet(token, accountId, {
     params.append('daily_spend_cap', String(dailySpendCap));
   }
 
-  console.log('[Meta API] createAdSet params:', Object.fromEntries(params));
-  const res = await fetch(
+  const res = await apiFetch(
     `${META_API_BASE}/${actId(accountId)}/adsets`,
-    {
-      method: 'POST',
-      headers: getHeaders(token),
-      body: params,
-    }
+    { method: 'POST', headers: getHeaders(token), body: params },
+    'createAdSet'
   );
-  if (!res.ok) {
-    const err = await res.json();
-    console.error('[Meta API] createAdSet error:', err);
-    throw new Error(extractError(err));
-  }
   return res.json();
 }
 
@@ -382,63 +451,89 @@ export async function uploadImage(token, accountId, file) {
   const formData = new FormData();
   formData.append('filename', file);
 
-  const res = await fetch(
+  const res = await apiFetch(
     `${META_API_BASE}/${actId(accountId)}/adimages`,
-    {
-      method: 'POST',
-      headers: getHeaders(token),
-      body: formData,
-    }
+    { method: 'POST', headers: getHeaders(token), body: formData },
+    `uploadImage(${file.name})`
   );
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(extractError(err));
-  }
   const data = await res.json();
   const images = data.images;
   const key = Object.keys(images)[0];
   return { hash: images[key].hash, url: images[key].url };
 }
 
-// Upload video
-export async function uploadVideo(token, accountId, file) {
+// Upload video — uses XMLHttpRequest for upload progress tracking
+export async function uploadVideo(token, accountId, file, onProgress) {
   const formData = new FormData();
   formData.append('source', file);
   formData.append('title', file.name);
 
-  const res = await fetch(
-    `${META_API_BASE}/${actId(accountId)}/advideos`,
-    {
-      method: 'POST',
-      headers: getHeaders(token),
-      body: formData,
-    }
-  );
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(extractError(err));
-  }
-  const data = await res.json();
-  return { id: data.id };
+  const label = `uploadVideo(${file.name}, ${(file.size / (1024 * 1024)).toFixed(1)}MB)`;
+  const ts = () => new Date().toLocaleTimeString();
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const timer = setTimeout(() => { xhr.abort(); reject(new Error(`Video upload timed out (5 min): ${file.name}`)); }, 5 * 60 * 1000);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(e.loaded / e.total);
+      }
+    };
+
+    xhr.onload = () => {
+      clearTimeout(timer);
+      let data;
+      try { data = JSON.parse(xhr.responseText); } catch { data = {}; }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        pushLog({ type: 'ok', method: 'POST', endpoint: label, status: xhr.status });
+        console.log(`%c[API] ${ts()} POST ${label} → ${xhr.status}`, 'color: #22c55e');
+        resolve({ id: data.id });
+      } else {
+        const msg = extractError(data);
+        pushLog({ type: 'error', method: 'POST', endpoint: label, status: xhr.status, errorMsg: msg, raw: data });
+        console.error(`%c[API ERROR] ${ts()} POST ${label} → ${xhr.status}`, 'color: #ef4444; font-weight: bold', data);
+        reject(new Error(msg));
+      }
+    };
+
+    xhr.onerror = () => { clearTimeout(timer); pushLog({ type: 'error', method: 'POST', endpoint: label, errorMsg: 'Network error' }); reject(new Error(`Network error uploading ${file.name}`)); };
+    xhr.onabort = () => { clearTimeout(timer); pushLog({ type: 'error', method: 'POST', endpoint: label, errorMsg: 'Timeout (5 min)' }); reject(new Error(`Video upload timed out (5 min): ${file.name}`)); };
+
+    xhr.open('POST', `${META_API_BASE}/${actId(accountId)}/advideos`);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.send(formData);
+  });
 }
 
-// Fetch video thumbnail with retry — separated so it can run in parallel
+// Fetch video thumbnail with retry — Meta needs time to process the video
 export async function getVideoThumbnail(token, videoId) {
-  const maxAttempts = 5;
-  const delay = 2000;
+  const maxAttempts = 10;
+  const delay = 3000;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) await new Promise((r) => setTimeout(r, delay));
     try {
+      // Try both picture field and thumbnails edge
       const res = await fetch(
-        `${META_API_BASE}/${videoId}?fields=picture`,
+        `${META_API_BASE}/${videoId}?fields=picture,thumbnails{uri}`,
         { headers: getHeaders(token) }
       );
       if (res.ok) {
         const data = await res.json();
-        if (data.picture) return data.picture;
+        // Prefer thumbnails edge (higher quality), fall back to picture field
+        const thumbUri = data.thumbnails?.data?.[0]?.uri;
+        if (thumbUri) {
+          console.log(`[Video] Thumbnail found for ${videoId} (attempt ${attempt + 1}): thumbnails edge`);
+          return thumbUri;
+        }
+        if (data.picture) {
+          console.log(`[Video] Thumbnail found for ${videoId} (attempt ${attempt + 1}): picture field`);
+          return data.picture;
+        }
       }
     } catch {}
   }
+  console.warn(`[Video] No thumbnail found for ${videoId} after ${maxAttempts} attempts`);
   return null;
 }
 
@@ -472,18 +567,11 @@ export async function createImageCreative(token, accountId, {
   });
   if (urlTags) params.set('url_tags', urlTags);
 
-  const res = await fetch(
+  const res = await apiFetch(
     `${META_API_BASE}/${actId(accountId)}/adcreatives`,
-    {
-      method: 'POST',
-      headers: getHeaders(token),
-      body: params,
-    }
+    { method: 'POST', headers: getHeaders(token), body: params },
+    'createImageCreative'
   );
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(extractError(err));
-  }
   return res.json();
 }
 
@@ -519,18 +607,11 @@ export async function createVideoCreative(token, accountId, {
   });
   if (urlTags) params.set('url_tags', urlTags);
 
-  const res = await fetch(
+  const res = await apiFetch(
     `${META_API_BASE}/${actId(accountId)}/adcreatives`,
-    {
-      method: 'POST',
-      headers: getHeaders(token),
-      body: params,
-    }
+    { method: 'POST', headers: getHeaders(token), body: params },
+    'createVideoCreative'
   );
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(extractError(err));
-  }
   return res.json();
 }
 
@@ -578,18 +659,11 @@ export async function createCarouselCreative(token, accountId, {
   });
   if (urlTags) params.set('url_tags', urlTags);
 
-  const res = await fetch(
+  const res = await apiFetch(
     `${META_API_BASE}/${actId(accountId)}/adcreatives`,
-    {
-      method: 'POST',
-      headers: getHeaders(token),
-      body: params,
-    }
+    { method: 'POST', headers: getHeaders(token), body: params },
+    'createCarouselCreative'
   );
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(extractError(err));
-  }
   return res.json();
 }
 
@@ -602,18 +676,11 @@ export async function createAd(token, accountId, { name, adSetId, creativeId, st
     status: status || 'PAUSED',
   });
 
-  const res = await fetch(
+  const res = await apiFetch(
     `${META_API_BASE}/${actId(accountId)}/ads`,
-    {
-      method: 'POST',
-      headers: getHeaders(token),
-      body: params,
-    }
+    { method: 'POST', headers: getHeaders(token), body: params },
+    'createAd'
   );
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(extractError(err));
-  }
   return res.json();
 }
 
@@ -632,42 +699,33 @@ export async function getInsights(token, accountId, { datePreset, level }) {
     limit: '500',
   });
 
-  const res = await fetch(
+  const res = await apiFetch(
     `${META_API_BASE}/${actId(accountId)}/insights?${params}`,
-    { headers: getHeaders(token) }
+    { headers: getHeaders(token) },
+    'getInsights'
   );
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error?.message || 'Failed to fetch insights');
-  }
   const data = await res.json();
   return data.data || [];
 }
 
 // Get account ad creatives
 export async function getAdCreatives(token, accountId) {
-  const res = await fetch(
+  const res = await apiFetch(
     `${META_API_BASE}/${actId(accountId)}/adcreatives?fields=name,thumbnail_url,status,object_story_spec&limit=50`,
-    { headers: getHeaders(token) }
+    { headers: getHeaders(token) },
+    'getAdCreatives'
   );
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error?.message || 'Failed to fetch creatives');
-  }
   const data = await res.json();
   return data.data || [];
 }
 
 // Search regions for geo targeting
 export async function searchRegions(token, query) {
-  const res = await fetch(
+  const res = await apiFetch(
     `${META_API_BASE}/search?type=adgeolocation&q=${encodeURIComponent(query)}&location_types=region`,
-    { headers: getHeaders(token) }
+    { headers: getHeaders(token) },
+    'searchRegions'
   );
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error?.message || 'Failed to search regions');
-  }
   const data = await res.json();
   return data.data || [];
 }

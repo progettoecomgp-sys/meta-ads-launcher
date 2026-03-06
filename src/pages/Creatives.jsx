@@ -79,11 +79,13 @@ export default function Creatives() {
                 </div>
                 <div className="p-3">
                   <p className="text-sm font-medium truncate">{c.name}</p>
-                  <p className="text-xs text-text-secondary mt-0.5">
-                    {(c.size / (1024 * 1024)).toFixed(2)} MB
-                  </p>
+                  {c.size > 0 && (
+                    <p className="text-xs text-text-secondary mt-0.5">
+                      {(c.size / (1024 * 1024)).toFixed(2)} MB
+                    </p>
+                  )}
                   <p className="text-xs text-text-secondary">
-                    {new Date(c.date).toLocaleDateString()}
+                    {new Date(c.addedAt).toLocaleDateString()}
                   </p>
                 </div>
               </div>

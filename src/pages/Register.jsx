@@ -8,6 +8,7 @@ export default function Register() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   if (loading) {
@@ -35,7 +36,10 @@ export default function Register() {
 
     setSubmitting(true);
     try {
-      await signUp(email, password);
+      const data = await signUp(email, password);
+      if (data?.user && !data.session) {
+        setSuccess(true);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -64,6 +68,11 @@ export default function Register() {
           <h2 className="text-xl font-bold mb-1">Create account</h2>
           <p className="text-sm text-text-secondary mb-6">Sign up to get started</p>
 
+          {success ? (
+            <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+              Check your email to confirm your account, then <Link to="/login" className="font-medium underline">sign in</Link>.
+            </div>
+          ) : (<>
           {error && (
             <div className="mb-4 p-3 bg-danger/10 border border-danger/20 rounded-lg text-sm text-danger">
               {error}
@@ -113,6 +122,7 @@ export default function Register() {
               {submitting ? 'Creating account...' : 'Create account'}
             </button>
           </form>
+          </>)}
         </div>
 
         <p className="text-center text-sm text-text-secondary mt-5">

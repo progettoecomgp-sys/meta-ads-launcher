@@ -52,9 +52,21 @@ export function AppProvider({ children }) {
 
         if (cancelled) return;
 
-        const dbSettings = settingsRes.data;
+        let dbSettings = settingsRes.data;
         const dbHistory = historyRes.data || [];
         const dbCreatives = creativesRes.data || [];
+
+        // Create user_settings row if it doesn't exist
+        if (!dbSettings) {
+          const { data: newRow } = await supabase.from('user_settings').upsert({
+            user_id: user.id,
+            access_token: '',
+            ad_account_id: '',
+            utm_template: '',
+            enhancements: DEFAULT_SETTINGS.enhancements,
+          }, { onConflict: 'user_id' }).select().single();
+          dbSettings = newRow;
+        }
 
         // Check if we should migrate from localStorage
         const shouldMigrate = !migrated.current && dbSettings && !dbSettings.access_token && dbHistory.length === 0 && dbCreatives.length === 0;
