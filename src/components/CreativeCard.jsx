@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ACCEPTED_IMAGE_TYPES, CTA_OPTIONS } from '../utils/constants';
+import CreativeAdSetPicker from './CreativeAdSetPicker';
 
 function formatSize(bytes) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
@@ -11,7 +12,7 @@ function getFileExt(name) {
   return name.split('.').pop().toUpperCase();
 }
 
-export default function CreativeCard({ creative, index, onToggleCustom, onUpdateField, onRemove, isCarousel, isFirst, isLast, onMove, globalCopy }) {
+export default function CreativeCard({ creative, index, onToggleCustom, onUpdateField, onRemove, isCarousel, isFirst, isLast, onMove, globalCopy, adSets, onAdSetAssignment }) {
   const [thumbnail, setThumbnail] = useState(null);
   const isImage = ACCEPTED_IMAGE_TYPES.includes(creative.file.type);
 
@@ -79,6 +80,11 @@ export default function CreativeCard({ creative, index, onToggleCustom, onUpdate
           <div className="w-2 h-2 rounded-full bg-success" />
           <span className="text-xs text-success font-medium">Ready</span>
         </div>
+
+        {/* AdSet picker (multi-adset, single ads only) */}
+        {adSets && adSets.length > 1 && !isCarousel && (
+          <CreativeAdSetPicker adSets={adSets} selectedIds={creative.adSetIds || ['__all__']} onChange={(ids) => onAdSetAssignment(creative.id, ids)} />
+        )}
 
         {/* Reorder (carousel only) + Custom toggle + remove */}
         <div className="flex items-center gap-2 flex-shrink-0">

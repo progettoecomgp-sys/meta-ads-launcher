@@ -5,13 +5,36 @@ import CreativeCard from '../components/CreativeCard';
 import AdPreview from '../components/AdPreview';
 import Modal from '../components/Modal';
 import Select from '../components/Select';
-import { CAMPAIGN_OBJECTIVES, OPTIMIZATION_GOALS, CTA_OPTIONS, ACCEPTED_IMAGE_TYPES, BID_STRATEGIES, CONVERSION_EVENTS, ATTRIBUTION_SETTINGS, DSA_COUNTRIES, buildDegreesOfFreedomSpec } from '../utils/constants';
-import CountryPicker from '../components/CountryPicker';
-import RegionPicker from '../components/RegionPicker';
-import DateTimePicker from '../components/DateTimePicker';
+import { CAMPAIGN_OBJECTIVES, CTA_OPTIONS, ACCEPTED_IMAGE_TYPES, BID_STRATEGIES, DSA_COUNTRIES, buildDegreesOfFreedomSpec } from '../utils/constants';
 import PagePicker from '../components/PagePicker';
+import AdSetCard from '../components/AdSetCard';
 import * as api from '../utils/metaApi';
 import { getApiLog, onApiLogChange } from '../utils/metaApi';
+
+const ADSET_COLORS = [
+  '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981',
+  '#ef4444', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
+  '#14b8a6', '#e879f9', '#fb923c', '#38bdf8', '#a3e635',
+  '#f43f5e', '#22d3ee', '#a78bfa', '#fbbf24', '#34d399',
+];
+
+let nextAdSetId = 1;
+
+function makeDefaultAdSet(overrides = {}) {
+  return {
+    _id: `as_${nextAdSetId++}`,
+    _type: 'new',
+    _color: ADSET_COLORS[(nextAdSetId - 2) % ADSET_COLORS.length],
+    _collapsed: false,
+    name: '', dailyBudget: '20', optimizationGoal: 'LINK_CLICKS',
+    countries: ['IT'], excludedCountries: [], excludedRegions: [],
+    showExclusions: false, ageMin: '18', ageMax: '65', gender: 'all',
+    startDate: '', selectedPixel: '', conversionEvent: 'PURCHASE',
+    bidAmount: '', attributionSetting: '7d_click_1d_view',
+    dailyMinSpend: '', dailySpendCap: '', dsaBeneficiary: '', dsaPayor: '',
+    ...overrides,
+  };
+}
 
 let nextId = 1;
 
@@ -194,45 +217,118 @@ export default function Upload() {
   const [mode, setMode] = useState(s.mode || 'new');
   const [creativeType, setCreativeType] = useState(s.creativeType || 'single');
 
-  // Existing campaign/adset
+  // Existing campaign/adset (API-fetched)
   const [campaigns, setCampaigns] = useState([]);
   const [selectedCampaign, setSelectedCampaign] = useState('');
-  const [adSets, setAdSets] = useState([]);
-  const [selectedAdSet, setSelectedAdSet] = useState('');
-  const [newAdSetMode, setNewAdSetMode] = useState(false);
+  const [apiAdSets, setApiAdSets] = useState([]);
 
   // Campaign fields
   const [campaignName, setCampaignName] = useState(s.campaignName || '');
   const [objective, setObjective] = useState(s.objective || 'OUTCOME_TRAFFIC');
   const [budgetType, setBudgetType] = useState(s.budgetType || 'ABO');
   const [bidStrategy, setBidStrategy] = useState(s.bidStrategy || 'LOWEST_COST_WITHOUT_CAP');
-
-  // Ad set fields
-  const [adSetName, setAdSetName] = useState(s.adSetName || '');
-  const [dailyBudget, setDailyBudget] = useState(s.dailyBudget || '20');
-  const [optimizationGoal, setOptimizationGoal] = useState(s.optimizationGoal || 'LINK_CLICKS');
-  const [countries, setCountries] = useState(Array.isArray(s.countries) ? s.countries : ['IT']);
-  const [excludedCountries, setExcludedCountries] = useState(Array.isArray(s.excludedCountries) ? s.excludedCountries : []);
-  const [excludedRegions, setExcludedRegions] = useState(Array.isArray(s.excludedRegions) ? s.excludedRegions : []);
-  const [showExclusions, setShowExclusions] = useState(s.showExclusions || false);
-  const [ageMin, setAgeMin] = useState(s.ageMin || '18');
-  const [ageMax, setAgeMax] = useState(s.ageMax || '65');
-  const [gender, setGender] = useState(s.gender || 'all');
-  const [startDate, setStartDate] = useState(s.startDate || '');
-
-  // Pixel + Conversion
-  const [pixels, setPixels] = useState([]);
-  const [selectedPixel, setSelectedPixel] = useState(s.selectedPixel || '');
-  const [conversionEvent, setConversionEvent] = useState(s.conversionEvent || 'PURCHASE');
-  const [bidAmount, setBidAmount] = useState(s.bidAmount || '');
-  const [attributionSetting, setAttributionSetting] = useState(s.attributionSetting || '7d_click_1d_view');
-
-  // Spend limits
-  const [dailyMinSpend, setDailyMinSpend] = useState(s.dailyMinSpend || '');
-  const [dailySpendCap, setDailySpendCap] = useState(s.dailySpendCap || '');
   const [budgetSharing, setBudgetSharing] = useState(s.budgetSharing ?? false);
-  const [dsaBeneficiary, setDsaBeneficiary] = useState(s.dsaBeneficiary || '');
-  const [dsaPayor, setDsaPayor] = useState(s.dsaPayor || '');
+
+  // Multi-AdSet state
+  const [adSetsState, setAdSetsState] = useState(() => {
+    // Migration: if old flat format exists, convert to array
+    if (s.adSetsState && Array.isArray(s.adSetsState)) {
+      // Restore from saved array — reassign IDs to avoid collision
+      return s.adSetsState.map((as, i) => {
+        const id = `as_${nextAdSetId++}`;
+        return { ...as, _id: id, _color: ADSET_COLORS[i % ADSET_COLORS.length] };
+      });
+    }
+    if (s.adSetName !== undefined) {
+      // Old flat format — migrate to single-element array
+      return [makeDefaultAdSet({
+        name: s.adSetName || '', dailyBudget: s.dailyBudget || '20',
+        optimizationGoal: s.optimizationGoal || 'LINK_CLICKS',
+        countries: Array.isArray(s.countries) ? s.countries : ['IT'],
+        excludedCountries: Array.isArray(s.excludedCountries) ? s.excludedCountries : [],
+        excludedRegions: Array.isArray(s.excludedRegions) ? s.excludedRegions : [],
+        showExclusions: s.showExclusions || false,
+        ageMin: s.ageMin || '18', ageMax: s.ageMax || '65', gender: s.gender || 'all',
+        startDate: s.startDate || '', selectedPixel: s.selectedPixel || '',
+        conversionEvent: s.conversionEvent || 'PURCHASE',
+        bidAmount: s.bidAmount || '', attributionSetting: s.attributionSetting || '7d_click_1d_view',
+        dailyMinSpend: s.dailyMinSpend || '', dailySpendCap: s.dailySpendCap || '',
+        dsaBeneficiary: s.dsaBeneficiary || '', dsaPayor: s.dsaPayor || '',
+      })];
+    }
+    return [makeDefaultAdSet()];
+  });
+
+  // Pixel list (used by AdSetCard)
+  const [pixels, setPixels] = useState([]);
+
+  // AdSet handlers
+  const updateAdSet = useCallback((id, field, value) => {
+    setAdSetsState((prev) => prev.map((as) => as._id === id ? { ...as, [field]: value } : as));
+  }, []);
+
+  const addAdSet = useCallback((overrides = {}) => {
+    setAdSetsState((prev) => [...prev, makeDefaultAdSet(overrides)]);
+  }, []);
+
+  const duplicateAdSet = useCallback((id) => {
+    setAdSetsState((prev) => {
+      const source = prev.find((as) => as._id === id);
+      if (!source) return prev;
+      const newId = `as_${nextAdSetId++}`;
+      const idx = prev.findIndex((as) => as._id === id);
+      const copy = {
+        ...source,
+        _id: newId,
+        _color: ADSET_COLORS[(nextAdSetId - 2) % ADSET_COLORS.length],
+        _collapsed: false,
+        name: source.name ? `${source.name} (copy)` : '',
+        existingId: '',
+        _type: 'new',
+      };
+      const next = [...prev];
+      next.splice(idx + 1, 0, copy);
+      return next;
+    });
+  }, []);
+
+  const removeAdSet = useCallback((id) => {
+    setAdSetsState((prev) => {
+      if (prev.length <= 1) return prev;
+      return prev.filter((as) => as._id !== id);
+    });
+    // Clean up creative assignments that reference the removed adset
+    setFiles((prev) => prev.map((f) => {
+      if (!f.adSetIds || f.adSetIds.includes('__all__')) return f;
+      const cleaned = f.adSetIds.filter((asId) => asId !== id);
+      return { ...f, adSetIds: cleaned.length > 0 ? cleaned : ['__all__'] };
+    }));
+  }, []);
+
+  const duplicateFirst = useCallback((count) => {
+    setAdSetsState((prev) => {
+      if (prev.length === 0) return prev;
+      const source = prev[0];
+      const copies = [];
+      for (let i = 0; i < count; i++) {
+        const newId = `as_${nextAdSetId++}`;
+        copies.push({
+          ...source,
+          _id: newId,
+          _color: ADSET_COLORS[(nextAdSetId - 2) % ADSET_COLORS.length],
+          _collapsed: true,
+          name: source.name ? `${source.name} (${i + 2})` : '',
+          existingId: '',
+          _type: 'new',
+        });
+      }
+      return [...prev, ...copies];
+    });
+  }, []);
+
+  const handleAdSetAssignment = useCallback((creativeId, newAdSetIds) => {
+    setFiles((prev) => prev.map((f) => f.id === creativeId ? { ...f, adSetIds: newAdSetIds } : f));
+  }, []);
 
   // Page & IG (loaded from API + manual fallback)
   const [pages, setPages] = useState([]);
@@ -271,26 +367,19 @@ export default function Upload() {
   const [countryPresets, setCountryPresets] = useState(() => {
     try { return JSON.parse(localStorage.getItem(PRESETS_KEY)) || []; } catch { return []; }
   });
-  const [presetName, setPresetName] = useState('');
-  const [showSavePreset, setShowSavePreset] = useState(false);
-
   const savePreset = (name) => {
     if (!name.trim()) return;
-    const preset = { name: name.trim(), countries, excludedCountries, excludedRegions };
+    // Use first adset's countries for the preset
+    const first = adSetsState[0] || {};
+    const preset = { name: name.trim(), countries: first.countries || [], excludedCountries: first.excludedCountries || [], excludedRegions: first.excludedRegions || [] };
     const updated = [...countryPresets.filter((p) => p.name !== name.trim()), preset];
     setCountryPresets(updated);
     localStorage.setItem(PRESETS_KEY, JSON.stringify(updated));
-    setPresetName('');
-    setShowSavePreset(false);
     addToast(`Preset "${name.trim()}" salvato`);
   };
 
-  const loadPreset = (preset) => {
-    setCountries(preset.countries || []);
-    setExcludedCountries(preset.excludedCountries || []);
-    setExcludedRegions(preset.excludedRegions || []);
-    const hasExclusions = (preset.excludedCountries?.length > 0) || (preset.excludedRegions?.length > 0);
-    setShowExclusions(hasExclusions);
+  const loadPreset = () => {
+    // No-op: AdSetCard applies presets directly via onUpdate
   };
 
   const deletePreset = (name) => {
@@ -300,23 +389,17 @@ export default function Upload() {
   };
 
   const needsBidAmount = bidStrategy === 'BID_CAP' || bidStrategy === 'COST_CAP';
-  const needsDsa = countries.some((c) => DSA_COUNTRIES.has(c));
   const needsRoas = bidStrategy === 'LOWEST_COST_WITH_MIN_ROAS';
 
   // ---- Save form state to sessionStorage ----
   useEffect(() => {
     sessionStorage.setItem(FORM_KEY, JSON.stringify({
-      mode, creativeType, campaignName, objective, budgetType, bidStrategy,
-      adSetName, dailyBudget, optimizationGoal, countries, excludedCountries, excludedRegions, showExclusions, ageMin, ageMax, gender, startDate,
-      selectedPixel, conversionEvent, bidAmount, attributionSetting,
-      dailyMinSpend, dailySpendCap, budgetSharing, dsaBeneficiary, dsaPayor,
+      mode, creativeType, campaignName, objective, budgetType, bidStrategy, budgetSharing,
+      adSetsState: adSetsState.map((as) => ({ ...as })),
       selectedPage, selectedIgAccount, websiteUrl, globalCopy, adStatus,
     }));
-  }, [mode, creativeType, campaignName, objective, budgetType, bidStrategy,
-    adSetName, dailyBudget, optimizationGoal, countries, excludedCountries, excludedRegions, showExclusions, ageMin, ageMax, gender, startDate,
-    selectedPixel, conversionEvent, bidAmount, attributionSetting,
-    dailyMinSpend, dailySpendCap, budgetSharing, dsaBeneficiary, dsaPayor,
-    selectedPage, selectedIgAccount, websiteUrl, globalCopy, adStatus]);
+  }, [mode, creativeType, campaignName, objective, budgetType, bidStrategy, budgetSharing,
+    adSetsState, selectedPage, selectedIgAccount, websiteUrl, globalCopy, adStatus]);
 
   // ---- API: Load ad accounts ----
   const [adAccounts, setAdAccounts] = useState([]);
@@ -366,7 +449,12 @@ export default function Upload() {
     api.getPixels(settings.accessToken, settings.adAccountId)
       .then((data) => {
         setPixels(data);
-        if (data.length > 0 && !selectedPixel) setSelectedPixel(data[0].id);
+        // Pre-fill pixel on adsets that don't have one yet
+        if (data.length > 0) {
+          setAdSetsState((prev) => prev.map((as) =>
+            as.selectedPixel ? as : { ...as, selectedPixel: data[0].id }
+          ));
+        }
       })
       .catch(() => {});
   }, [isConfigured, settings.accessToken, settings.adAccountId]);
@@ -379,32 +467,46 @@ export default function Upload() {
       .catch(() => {});
   }, [isConfigured, settings.accessToken, settings.adAccountId, mode]);
 
-  // ---- API: Load adsets ----
+  // ---- API: Load adsets for existing campaign ----
   useEffect(() => {
-    if (!selectedCampaign) { setAdSets([]); return; }
+    if (!selectedCampaign) { setApiAdSets([]); return; }
     api.getAdSets(settings.accessToken, selectedCampaign)
-      .then(setAdSets)
+      .then(setApiAdSets)
       .catch(() => {});
   }, [selectedCampaign, settings.accessToken]);
 
   // ---- Detect CBO from selected campaign ----
   const selectedCampaignObj = campaigns.find((c) => c.id === selectedCampaign);
-  const isCBO = !!(selectedCampaignObj?.daily_budget || selectedCampaignObj?.lifetime_budget);
+  const isCBO = mode === 'existing'
+    ? !!(selectedCampaignObj?.daily_budget || selectedCampaignObj?.lifetime_budget)
+    : budgetType === 'CBO';
 
-  // ---- Pre-fill new ad set form from existing ad sets ----
+  // ---- Pre-fill new ad set defaults from existing ad sets ----
   useEffect(() => {
-    if (!adSets.length || mode !== 'existing') return;
-    const ref = adSets.find((a) => a.status === 'ACTIVE') || adSets[0];
-    if (ref.optimization_goal) setOptimizationGoal(ref.optimization_goal);
-    if (ref.promoted_object?.pixel_id) setSelectedPixel(ref.promoted_object.pixel_id);
-    if (ref.promoted_object?.custom_event_type) setConversionEvent(ref.promoted_object.custom_event_type);
-  }, [adSets, mode]);
+    if (!apiAdSets.length || mode !== 'existing') return;
+    const ref = apiAdSets.find((a) => a.status === 'ACTIVE') || apiAdSets[0];
+    // Pre-fill the first adSet with values from the existing campaign's ad sets
+    setAdSetsState((prev) => {
+      if (prev.length === 0) return prev;
+      const first = prev[0];
+      if (first._type === 'existing') return prev; // don't overwrite existing
+      return [
+        { ...first,
+          optimizationGoal: ref.optimization_goal || first.optimizationGoal,
+          selectedPixel: ref.promoted_object?.pixel_id || first.selectedPixel,
+          conversionEvent: ref.promoted_object?.custom_event_type || first.conversionEvent,
+        },
+        ...prev.slice(1),
+      ];
+    });
+  }, [apiAdSets, mode]);
 
   // ---- Handlers ----
   const handleFilesSelected = useCallback((newFiles) => {
     const creatives = newFiles.map((file) => ({
       id: nextId++,
       file,
+      adSetIds: ['__all__'],
       useCustomCopy: false,
       primaryText: '',
       headline: '',
@@ -490,65 +592,70 @@ export default function Upload() {
   const handleLaunch = () => {
     if (mode === 'new') {
       if (!campaignName.trim()) { addToast('Enter a campaign name', 'error'); return; }
-      if (!adSetName.trim()) { addToast('Enter an ad set name', 'error'); return; }
     } else {
       if (!selectedCampaign) { addToast('Select a campaign', 'error'); return; }
-      if (selectedAdSet === '__new__') {
-        if (!adSetName.trim()) { addToast('Enter a name for the new ad set', 'error'); return; }
-      } else if (!selectedAdSet) { addToast('Select an ad set', 'error'); return; }
     }
     if (files.length === 0) { addToast('Upload at least one creative', 'error'); return; }
     if (!websiteUrl.trim()) { addToast('Enter a website URL', 'error'); return; }
     if (!selectedPage) { addToast('Select or enter a Facebook Page ID', 'error'); return; }
     if (creativeType === 'carousel' && files.length < 2) { addToast('Carousel needs at least 2 images', 'error'); return; }
-    if (mode === 'new' || selectedAdSet === '__new__') {
-      const budget = Number(dailyBudget);
-      if (!budget || budget <= 0) { addToast('Daily budget must be greater than 0', 'error'); return; }
-      if (Number(ageMin) > Number(ageMax)) { addToast('Min age cannot be greater than max age', 'error'); return; }
-      if (needsBidAmount && (!bidAmount || Number(bidAmount) <= 0)) { addToast('Enter a valid bid amount for the selected bid strategy', 'error'); return; }
-      if (needsRoas && (!bidAmount || Number(bidAmount) <= 0)) { addToast('Enter a valid ROAS target', 'error'); return; }
-      if (needsDsa && (!dsaBeneficiary.trim() || !dsaPayor.trim())) { addToast('DSA beneficiary and payor are required for EU targeting', 'error'); return; }
+
+    // Validate each ad set
+    const newAdSets = adSetsState.filter((as) => as._type !== 'existing');
+    if (adSetsState.length === 0) { addToast('Add at least one ad set', 'error'); return; }
+
+    for (const as of newAdSets) {
+      if (!as.name.trim()) { addToast(`Ad set "${as.name || '(unnamed)'}" needs a name`, 'error'); return; }
+      if (!isCBO) {
+        const budget = Number(as.dailyBudget);
+        if (!budget || budget <= 0) { addToast(`Ad set "${as.name}" needs a budget > 0`, 'error'); return; }
+      }
+      if (Number(as.ageMin) > Number(as.ageMax)) { addToast(`Ad set "${as.name}": min age > max age`, 'error'); return; }
+      if (needsBidAmount && (!as.bidAmount || Number(as.bidAmount) <= 0)) { addToast(`Ad set "${as.name}": enter a valid bid amount`, 'error'); return; }
+      if (needsRoas && (!as.bidAmount || Number(as.bidAmount) <= 0)) { addToast(`Ad set "${as.name}": enter a valid ROAS target`, 'error'); return; }
+      const asDsa = (as.countries || []).some((c) => DSA_COUNTRIES.has(c));
+      if (asDsa && (!as.dsaBeneficiary?.trim() || !as.dsaPayor?.trim())) { addToast(`Ad set "${as.name}": DSA fields required for EU`, 'error'); return; }
     }
+
+    // Validate that every creative is assigned to at least 1 adset (single ads)
+    if (creativeType === 'single') {
+      for (const f of files) {
+        const ids = f.adSetIds || ['__all__'];
+        if (!ids.includes('__all__')) {
+          const validIds = ids.filter((id) => adSetsState.some((as) => as._id === id));
+          if (validIds.length === 0) { addToast(`Creative "${f.file.name}" is not assigned to any ad set`, 'error'); return; }
+        }
+      }
+    }
+
     setShowLaunchModal(true);
+  };
+
+  // Helper: get which adSetIds a creative belongs to (resolved to actual IDs)
+  const resolveCreativeAdSets = (creative, allAdSets) => {
+    const ids = creative.adSetIds || ['__all__'];
+    if (ids.includes('__all__')) return allAdSets.map((as) => as._id);
+    return ids.filter((id) => allAdSets.some((as) => as._id === id));
   };
 
   const confirmLaunch = () => {
     // --- Snapshot ALL form values before closing the modal ---
     const snap = {
       files: files.map((f) => ({ ...f })),
+      adSets: adSetsState.map((as) => ({ ...as })),
       mode,
       creativeType,
       campaignName,
       selectedCampaign,
       selectedCampaignObj: campaigns.find((c) => c.id === selectedCampaign),
-      selectedAdSet,
-      adSetName,
-      dailyBudget,
       objective,
       adStatus,
       budgetType,
       bidStrategy,
       budgetSharing,
-      optimizationGoal,
-      countries: [...countries],
-      excludedCountries: [...excludedCountries],
-      excludedRegions: [...excludedRegions],
-      ageMin,
-      ageMax,
-      gender,
-      startDate,
-      selectedPixel,
-      conversionEvent,
-      bidAmount,
-      attributionSetting,
-      dailyMinSpend,
-      dailySpendCap,
       needsBidAmount,
-      needsDsa,
-      dsaBeneficiary,
-      dsaPayor,
+      isCBO,
       pageId: selectedPage,
-      // Don't pass page-backed IG IDs — they're not valid as instagram_actor_id
       igId: (() => {
         if (!selectedIgAccount) return undefined;
         const ig = igAccounts.find((a) => a.id === selectedIgAccount);
@@ -600,82 +707,77 @@ export default function Upload() {
       return { primaryText: snap.globalCopy.primaryText, headline: snap.globalCopy.headline, description: snap.globalCopy.description, linkUrl: finalUrl, cta: snap.globalCopy.cta };
     };
 
-    // Run launch in background (async IIFE)
+    // Run launch in background (async IIFE) — 5-phase algorithm
     (async () => {
       const total = snap.files.length;
-      let campaignId, adSetId;
       const results = [];
+      const adSetIdMap = {}; // _id → Meta API ID
 
       try {
+        // ── PHASE 1: Create campaign (if new mode) ──
+        let campaignId;
         if (snap.mode === 'new') {
-          const budgetCents = String(Math.round(Number(snap.dailyBudget) * 100));
-          const bidAmountCents = snap.bidAmount ? String(Math.round(Number(snap.bidAmount) * 100)) : undefined;
-          const minSpendCents = snap.dailyMinSpend ? String(Math.round(Number(snap.dailyMinSpend) * 100)) : undefined;
-          const spendCapCents = snap.dailySpendCap ? String(Math.round(Number(snap.dailySpendCap) * 100)) : undefined;
+          const firstAs = snap.adSets[0];
+          const budgetCents = String(Math.round(Number(firstAs.dailyBudget) * 100));
 
-          updateLaunch({ step: 'Creating campaign...', pct: 3 });
+          updateLaunch({ step: 'Creating campaign...', pct: 2 });
           const camp = await api.createCampaign(snap.accessToken, snap.adAccountId, {
             name: snap.campaignName, objective: snap.objective, status: snap.adStatus, budgetType: snap.budgetType,
             dailyBudget: budgetCents, bidStrategy: snap.bidStrategy, budgetSharing: snap.budgetSharing,
           });
           campaignId = camp.id;
-
-          updateLaunch({ step: 'Creating ad set...', pct: 5 });
-          const aset = await api.createAdSet(snap.accessToken, snap.adAccountId, {
-            name: snap.adSetName, campaignId, dailyBudget: budgetCents, optimizationGoal: snap.optimizationGoal,
-            billingEvent: 'IMPRESSIONS',
-            countries: snap.countries, excludedCountries: snap.excludedCountries, excludedRegions: snap.excludedRegions,
-            ageMin: snap.ageMin, ageMax: snap.ageMax, gender: snap.gender, status: snap.adStatus,
-            startTime: snap.startDate || undefined,
-            budgetType: snap.budgetType, bidStrategy: snap.bidStrategy, budgetSharing: snap.budgetSharing,
-            pixelId: snap.selectedPixel || undefined,
-            conversionEvent: snap.selectedPixel ? snap.conversionEvent : undefined,
-            bidAmount: snap.needsBidAmount ? bidAmountCents : undefined,
-            attributionSetting: snap.selectedPixel ? snap.attributionSetting : undefined,
-            dailyMinSpend: minSpendCents, dailySpendCap: spendCapCents,
-            dsaBeneficiary: snap.needsDsa ? (snap.dsaBeneficiary || snap.pages.find((p) => p.id === snap.pageId)?.name || snap.pageId) : undefined,
-            dsaPayor: snap.needsDsa ? (snap.dsaPayor || snap.pages.find((p) => p.id === snap.pageId)?.name || snap.pageId) : undefined,
-          });
-          adSetId = aset.id;
-        } else if (snap.selectedAdSet === '__new__') {
-          campaignId = snap.selectedCampaign;
-          const snapIsCBO = !!(snap.selectedCampaignObj?.daily_budget || snap.selectedCampaignObj?.lifetime_budget);
-          const budgetCents = !snapIsCBO ? String(Math.round(Number(snap.dailyBudget) * 100)) : undefined;
-          const bidAmountCents = snap.bidAmount ? String(Math.round(Number(snap.bidAmount) * 100)) : undefined;
-          const minSpendCents = (!snapIsCBO && snap.dailyMinSpend) ? String(Math.round(Number(snap.dailyMinSpend) * 100)) : undefined;
-          const spendCapCents = (!snapIsCBO && snap.dailySpendCap) ? String(Math.round(Number(snap.dailySpendCap) * 100)) : undefined;
-
-          updateLaunch({ step: 'Creating new ad set...', pct: 5 });
-          const aset = await api.createAdSet(snap.accessToken, snap.adAccountId, {
-            name: snap.adSetName, campaignId, dailyBudget: budgetCents, optimizationGoal: snap.optimizationGoal,
-            billingEvent: 'IMPRESSIONS',
-            countries: snap.countries, excludedCountries: snap.excludedCountries, excludedRegions: snap.excludedRegions,
-            ageMin: snap.ageMin, ageMax: snap.ageMax, gender: snap.gender, status: snap.adStatus,
-            startTime: snap.startDate || undefined,
-            budgetType: snapIsCBO ? 'CBO' : 'ABO',
-            bidStrategy: snap.selectedCampaignObj?.bid_strategy || 'LOWEST_COST_WITHOUT_CAP',
-            pixelId: snap.selectedPixel || undefined,
-            conversionEvent: snap.selectedPixel ? snap.conversionEvent : undefined,
-            bidAmount: snap.needsBidAmount ? bidAmountCents : undefined,
-            attributionSetting: snap.selectedPixel ? snap.attributionSetting : undefined,
-            dailyMinSpend: minSpendCents, dailySpendCap: spendCapCents,
-            dsaBeneficiary: snap.needsDsa ? (snap.dsaBeneficiary || snap.pages.find((p) => p.id === snap.pageId)?.name || snap.pageId) : undefined,
-            dsaPayor: snap.needsDsa ? (snap.dsaPayor || snap.pages.find((p) => p.id === snap.pageId)?.name || snap.pageId) : undefined,
-          });
-          adSetId = aset.id;
         } else {
           campaignId = snap.selectedCampaign;
-          adSetId = snap.selectedAdSet;
+        }
+
+        // ── PHASE 2: Create ad sets (sequentially to avoid rate limits) ──
+        const totalAdSets = snap.adSets.length;
+        for (let i = 0; i < totalAdSets; i++) {
+          const as = snap.adSets[i];
+
+          if (as._type === 'existing') {
+            adSetIdMap[as._id] = as.existingId;
+            continue;
+          }
+
+          const pct = 3 + Math.round((i / totalAdSets) * 12);
+          updateLaunch({ step: `Creating ad set ${i + 1}/${totalAdSets}...`, pct });
+
+          const asIsCBO = snap.isCBO;
+          const budgetCents = !asIsCBO ? String(Math.round(Number(as.dailyBudget) * 100)) : undefined;
+          const bidAmountCents = as.bidAmount ? String(Math.round(Number(as.bidAmount) * 100)) : undefined;
+          const minSpendCents = (!asIsCBO && as.dailyMinSpend) ? String(Math.round(Number(as.dailyMinSpend) * 100)) : undefined;
+          const spendCapCents = (!asIsCBO && as.dailySpendCap) ? String(Math.round(Number(as.dailySpendCap) * 100)) : undefined;
+          const asDsa = (as.countries || []).some((c) => DSA_COUNTRIES.has(c));
+
+          const aset = await api.createAdSet(snap.accessToken, snap.adAccountId, {
+            name: as.name, campaignId, dailyBudget: budgetCents, optimizationGoal: as.optimizationGoal,
+            billingEvent: 'IMPRESSIONS',
+            countries: as.countries, excludedCountries: as.excludedCountries, excludedRegions: as.excludedRegions,
+            ageMin: as.ageMin, ageMax: as.ageMax, gender: as.gender, status: snap.adStatus,
+            startTime: as.startDate || undefined,
+            budgetType: snap.mode === 'new' ? snap.budgetType : (asIsCBO ? 'CBO' : 'ABO'),
+            bidStrategy: snap.mode === 'new' ? snap.bidStrategy : (snap.selectedCampaignObj?.bid_strategy || 'LOWEST_COST_WITHOUT_CAP'),
+            budgetSharing: snap.mode === 'new' ? snap.budgetSharing : undefined,
+            pixelId: as.selectedPixel || undefined,
+            conversionEvent: as.selectedPixel ? as.conversionEvent : undefined,
+            bidAmount: snap.needsBidAmount ? bidAmountCents : undefined,
+            attributionSetting: as.selectedPixel ? as.attributionSetting : undefined,
+            dailyMinSpend: minSpendCents, dailySpendCap: spendCapCents,
+            dsaBeneficiary: asDsa ? (as.dsaBeneficiary || snap.pages.find((p) => p.id === snap.pageId)?.name || snap.pageId) : undefined,
+            dsaPayor: asDsa ? (as.dsaPayor || snap.pages.find((p) => p.id === snap.pageId)?.name || snap.pageId) : undefined,
+          });
+          adSetIdMap[as._id] = aset.id;
         }
 
         if (snap.creativeType === 'carousel') {
-          // Progress: upload 0-70%, creative 70-90%, ad 90-100%
-          updateLaunch({ step: 'Uploading carousel images...', pct: 2 });
+          // ── CAROUSEL: upload → creative → 1 ad per adset ──
+          updateLaunch({ step: 'Uploading carousel images...', pct: 15 });
           let uploadCount = 0;
-          const carouselFileProgress = new Array(snap.files.length).fill(0);
+          const carouselFileProgress = new Array(total).fill(0);
           const updateCarouselPct = () => {
-            const avg = carouselFileProgress.reduce((a, b) => a + b, 0) / snap.files.length;
-            updateLaunch({ pct: Math.round(avg * 70) });
+            const avg = carouselFileProgress.reduce((a, b) => a + b, 0) / total;
+            updateLaunch({ pct: 15 + Math.round(avg * 45) });
           };
           const uploads = await Promise.all(snap.files.map(async (creative, idx) => {
             const copy = snapGetCopy(creative);
@@ -688,7 +790,7 @@ export default function Upload() {
                 });
             uploadCount++;
             carouselFileProgress[idx] = 1;
-            updateLaunch({ step: `Uploaded ${uploadCount}/${total}`, pct: Math.round((uploadCount / total) * 70) });
+            updateLaunch({ step: `Uploaded ${uploadCount}/${total}`, pct: 15 + Math.round((uploadCount / total) * 45) });
             return { upload, copy, isImage };
           }));
 
@@ -697,7 +799,7 @@ export default function Upload() {
             linkUrl: copy.linkUrl, cta: copy.cta,
           }));
 
-          updateLaunch({ step: 'Creating carousel creative...', pct: 75 });
+          updateLaunch({ step: 'Creating carousel creative...', pct: 65 });
           const globalUrl = snapBuildUrl(snap.websiteUrl);
           const carouselSpec = buildDegreesOfFreedomSpec(snap.enhancements, 'carousel');
           let creativeResult;
@@ -720,19 +822,29 @@ export default function Upload() {
             }
           }
 
-          const ad = await api.createAd(snap.accessToken, snap.adAccountId, {
-            name: 'Ad - Carousel', adSetId, creativeId: creativeResult.id, status: snap.adStatus,
-          });
-          results.push({ fileName: 'Carousel', adId: ad.id, creativeId: creativeResult.id });
+          // Create 1 ad per adset (carousel = all adsets, no picker)
+          updateLaunch({ step: 'Creating ads...', pct: 75 });
+          let adCount = 0;
+          const adSetEntries = Object.entries(adSetIdMap);
+          const adResults = await Promise.all(adSetEntries.map(async ([localId, metaId]) => {
+            const asName = snap.adSets.find((a) => a._id === localId)?.name || '';
+            const ad = await api.createAd(snap.accessToken, snap.adAccountId, {
+              name: `Ad - Carousel${adSetEntries.length > 1 ? ` (${asName})` : ''}`, adSetId: metaId, creativeId: creativeResult.id, status: snap.adStatus,
+            });
+            adCount++;
+            updateLaunch({ step: `Creating ads... ${adCount}/${adSetEntries.length}`, pct: 75 + Math.round((adCount / adSetEntries.length) * 25) });
+            return { fileName: 'Carousel', adId: ad.id, creativeId: creativeResult.id, adSetName: asName };
+          }));
+          results.push(...adResults);
         } else {
-          // Progress: upload 0-50%, thumbnails 50-60%, ads 60-100%
-          updateLaunch({ step: 'Uploading creatives...', pct: 2 });
+          // ── SINGLE ADS: 5-phase ──
+          // Phase 3: Upload media (parallel, once per file)
+          updateLaunch({ step: 'Uploading creatives...', pct: 15 });
           let uploadCount = 0;
-          // Track per-file progress for smooth bar (especially for large videos)
-          const fileProgress = new Array(snap.files.length).fill(0);
+          const fileProgress = new Array(total).fill(0);
           const updateUploadPct = () => {
-            const avg = fileProgress.reduce((a, b) => a + b, 0) / snap.files.length;
-            updateLaunch({ pct: Math.round(avg * 50) });
+            const avg = fileProgress.reduce((a, b) => a + b, 0) / total;
+            updateLaunch({ pct: 15 + Math.round(avg * 30) });
           };
           const uploads = await Promise.all(snap.files.map(async (creative, idx) => {
             const isImage = ACCEPTED_IMAGE_TYPES.includes(creative.file.type);
@@ -745,21 +857,23 @@ export default function Upload() {
                 });
             uploadCount++;
             fileProgress[idx] = 1;
-            updateLaunch({ step: `Uploaded ${uploadCount}/${total}`, pct: Math.round((uploadCount / total) * 50) });
+            updateLaunch({ step: `Uploaded ${uploadCount}/${total}`, pct: 15 + Math.round((uploadCount / total) * 30) });
             return { creative, upload, isImage };
           }));
 
+          // Process video thumbnails
           const videoUploads = uploads.filter((u) => !u.isImage);
           if (videoUploads.length > 0) {
-            updateLaunch({ step: `Processing ${videoUploads.length} video thumbnail${videoUploads.length > 1 ? 's' : ''}...`, pct: 55 });
+            updateLaunch({ step: `Processing ${videoUploads.length} video thumbnail${videoUploads.length > 1 ? 's' : ''}...`, pct: 48 });
             await Promise.all(videoUploads.map(async (u) => {
               u.thumbnailUrl = await api.getVideoThumbnail(snap.accessToken, u.upload.id);
             }));
           }
 
-          updateLaunch({ step: 'Creating ads...', pct: 60 });
-          let adCount = 0;
-          const adResults = await Promise.all(uploads.map(async (u) => {
+          // Phase 4: Create creatives (1 per file, account-level)
+          updateLaunch({ step: 'Creating creatives...', pct: 50 });
+          let creativeCount = 0;
+          const creativeResults = await Promise.all(uploads.map(async (u) => {
             const copy = snapGetCopy(u.creative);
             let creativeResult;
             if (u.isImage) {
@@ -779,25 +893,53 @@ export default function Upload() {
                 instagramAccountId: snap.igId, degreesOfFreedomSpec: vidSpec, urlTags: snapUrlTags,
               });
             }
+            creativeCount++;
+            updateLaunch({ step: `Creating creatives... ${creativeCount}/${total}`, pct: 50 + Math.round((creativeCount / total) * 20) });
+            return { creative: u.creative, creativeResult };
+          }));
+
+          // Phase 5: Create ads for each (creative, adset) pair
+          updateLaunch({ step: 'Creating ads...', pct: 70 });
+
+          // Build pairs: for each creative, determine which adsets it belongs to
+          const pairs = [];
+          for (const cr of creativeResults) {
+            const targetAdSetIds = resolveCreativeAdSets(cr.creative, snap.adSets);
+            for (const localId of targetAdSetIds) {
+              const metaId = adSetIdMap[localId];
+              if (metaId) {
+                pairs.push({
+                  creative: cr.creative,
+                  creativeResult: cr.creativeResult,
+                  adSetLocalId: localId,
+                  adSetMetaId: metaId,
+                  adSetName: snap.adSets.find((a) => a._id === localId)?.name || '',
+                });
+              }
+            }
+          }
+
+          let adCount = 0;
+          const adResults = await Promise.all(pairs.map(async (pair) => {
+            const adNameSuffix = snap.adSets.length > 1 ? ` (${pair.adSetName})` : '';
             const ad = await api.createAd(snap.accessToken, snap.adAccountId, {
-              name: `Ad - ${u.creative.file.name}`, adSetId, creativeId: creativeResult.id, status: snap.adStatus,
+              name: `Ad - ${pair.creative.file.name}${adNameSuffix}`, adSetId: pair.adSetMetaId, creativeId: pair.creativeResult.id, status: snap.adStatus,
             });
             adCount++;
-            updateLaunch({ step: `Creating ads... ${adCount}/${total}`, pct: 60 + Math.round((adCount / total) * 40) });
-            return { fileName: u.creative.file.name, adId: ad.id, creativeId: creativeResult.id };
+            updateLaunch({ step: `Creating ads... ${adCount}/${pairs.length}`, pct: 70 + Math.round((adCount / pairs.length) * 30) });
+            return { fileName: pair.creative.file.name, adId: ad.id, creativeId: pair.creativeResult.id, adSetName: pair.adSetName };
           }));
           results.push(...adResults);
         }
 
-        addHistory({ campaignId, adSetId, campaignName: launchName, adsCount: results.length, status: snap.adStatus, results });
+        const firstAdSetMetaId = Object.values(adSetIdMap)[0];
+        addHistory({ campaignId, adSetId: firstAdSetMetaId, campaignName: launchName, adsCount: results.length, status: snap.adStatus, results });
         addCreatives(snap.files.map((f) => ({ name: f.file.name, size: f.file.size, type: f.file.type, date: new Date().toISOString() })));
-        addToast(`${results.length} ad${results.length !== 1 ? 's' : ''} launched successfully!`);
-        // Remove from bgLaunches after a brief delay so user sees the toast
+        addToast(`${results.length} ad${results.length !== 1 ? 's' : ''} launched across ${snap.adSets.length} ad set${snap.adSets.length !== 1 ? 's' : ''}!`);
         setTimeout(() => setBgLaunches((prev) => prev.filter((l) => l.id !== launchId)), 1000);
       } catch (err) {
         addToast(`Launch failed: ${err.message}`, 'error');
         updateLaunch({ status: 'error', step: err.message });
-        // Auto-remove error after 5s
         setTimeout(() => setBgLaunches((prev) => prev.filter((l) => l.id !== launchId)), 5000);
       }
     })();
@@ -868,15 +1010,19 @@ export default function Upload() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1">
-                    Daily Budget ($) — {budgetType === 'CBO' ? 'Campaign level' : 'Ad Set level'}
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary">$</span>
-                    <input type="number" step="0.01" min="1" value={dailyBudget} onChange={(e) => setDailyBudget(e.target.value)} className={`${inputCls} pl-7`} />
+                {budgetType === 'CBO' && (
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1">
+                      Daily Budget ($) — Campaign level
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary">$</span>
+                      <input type="number" step="0.01" min="1" value={adSetsState[0]?.dailyBudget || '20'} onChange={(e) => {
+                        if (adSetsState.length > 0) updateAdSet(adSetsState[0]._id, 'dailyBudget', e.target.value);
+                      }} className={`${inputCls} pl-7`} />
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Budget sharing (ABO only) */}
                 {budgetType === 'ABO' && (
@@ -892,29 +1038,13 @@ export default function Upload() {
 
                 <Select label="Bid Strategy" value={bidStrategy} onChange={setBidStrategy} options={BID_STRATEGIES} />
 
-                {needsBidAmount && (
-                  <div>
-                    <label className="block text-xs font-medium text-text-secondary mb-1">
-                      {bidStrategy === 'COST_CAP' ? 'Cost Cap ($)' : 'Bid Cap ($)'}
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary">$</span>
-                      <input type="number" step="0.01" min="0.01" value={bidAmount} onChange={(e) => setBidAmount(e.target.value)} className={`${inputCls} pl-7`} placeholder="5.00" />
-                    </div>
-                  </div>
-                )}
-                {needsRoas && (
-                  <div>
-                    <label className="block text-xs font-medium text-text-secondary mb-1">Minimum ROAS</label>
-                    <input type="number" step="0.01" min="0.01" value={bidAmount} onChange={(e) => setBidAmount(e.target.value)} className={inputCls} placeholder="2.00" />
-                  </div>
-                )}
+                {/* Bid amount / ROAS are now configured per ad set */}
               </>
             ) : (
               <>
                 <div>
                   <label className="block text-xs font-medium text-text-secondary mb-1">Campaign</label>
-                  <select value={selectedCampaign} onChange={(e) => { setSelectedCampaign(e.target.value); setSelectedAdSet(''); setNewAdSetMode(false); }} className={inputCls}>
+                  <select value={selectedCampaign} onChange={(e) => { setSelectedCampaign(e.target.value); }} className={inputCls}>
                     <option value="">Select a campaign...</option>
                     {(() => {
                       const sorted = [...campaigns].sort((a, b) => (a.status === 'ACTIVE' ? 0 : 1) - (b.status === 'ACTIVE' ? 0 : 1));
@@ -928,353 +1058,95 @@ export default function Upload() {
                     })()}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1">Ad Set</label>
-                  <select value={selectedAdSet} onChange={(e) => {
-                    const val = e.target.value;
-                    setSelectedAdSet(val);
-                    setNewAdSetMode(val === '__new__');
-                  }} className={inputCls}>
-                    <option value="">Select an ad set...</option>
-                    {(() => {
-                      const sorted = [...adSets].sort((a, b) => (a.status === 'ACTIVE' ? 0 : 1) - (b.status === 'ACTIVE' ? 0 : 1));
-                      const firstInactiveIdx = sorted.findIndex((a) => a.status !== 'ACTIVE');
-                      return sorted.map((a, i) => (
-                        <React.Fragment key={a.id}>
-                          {i === firstInactiveIdx && firstInactiveIdx > 0 && <option disabled>{'─'.repeat(30)}</option>}
-                          <option value={a.id}>{a.name} — {a.status}</option>
-                        </React.Fragment>
-                      ));
-                    })()}
-                    <option value="__new__">+ Create new ad set</option>
-                  </select>
-                </div>
-                {newAdSetMode && (
-                  <div className="bg-accent/5 rounded-lg p-4 space-y-3 border border-accent/20">
-                    <h3 className="text-xs font-semibold text-accent">New Ad Set {isCBO && <span className="font-normal text-text-secondary">(CBO — budget at campaign level)</span>}</h3>
-                    <div>
-                      <label className="block text-xs font-medium text-text-secondary mb-1">Ad Set Name</label>
-                      <input type="text" value={adSetName} onChange={(e) => setAdSetName(e.target.value)} className={inputCls} placeholder="es. Italy 18-65 All" />
-                    </div>
-
-                    {!isCBO && (
-                      <div>
-                        <label className="block text-xs font-medium text-text-secondary mb-1">Daily Budget ($)</label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary">$</span>
-                          <input type="number" step="0.01" min="1" value={dailyBudget} onChange={(e) => setDailyBudget(e.target.value)} className={`${inputCls} pl-7`} />
-                        </div>
-                      </div>
-                    )}
-
-                    <Select label="Optimization Goal" value={optimizationGoal} onChange={setOptimizationGoal} options={OPTIMIZATION_GOALS} />
-
-                    <div>
-                      <label className="block text-xs font-medium text-text-secondary mb-1">Dataset (Pixel)</label>
-                      <select value={selectedPixel} onChange={(e) => setSelectedPixel(e.target.value)} className={inputCls}>
-                        <option value="">No pixel</option>
-                        {pixels.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.id})</option>)}
-                      </select>
-                    </div>
-                    {selectedPixel && (
-                      <Select label="Conversion Event" value={conversionEvent} onChange={setConversionEvent} options={CONVERSION_EVENTS} />
-                    )}
-
-                    <Select label="Attribution Model" value={attributionSetting} onChange={setAttributionSetting} options={ATTRIBUTION_SETTINGS} />
-
-                    <div>
-                      <label className="block text-xs font-medium text-text-secondary mb-1">Data di inizio</label>
-                      <DateTimePicker value={startDate} onChange={setStartDate} placeholder="Inizia subito" />
-                      <p className="text-xs text-text-secondary mt-1">Lascia vuoto per iniziare subito</p>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-text-secondary mb-1">Countries & Regions</label>
-                      <CountryPicker selected={countries} onChange={setCountries} />
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const next = !showExclusions;
-                          setShowExclusions(next);
-                          if (!next) { setExcludedCountries([]); setExcludedRegions([]); }
-                        }}
-                        className={`mt-2 flex items-center gap-1.5 text-xs font-medium transition-colors ${showExclusions ? 'text-danger' : 'text-text-secondary hover:text-danger'}`}
-                      >
-                        <svg className={`w-3.5 h-3.5 transition-transform duration-150 ${showExclusions ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                        {showExclusions ? 'Esclusioni attive' : 'Aggiungi esclusioni'}
-                      </button>
-                      {showExclusions && (
-                        <div className="mt-2 space-y-2 pl-3 border-l-2 border-danger/20">
-                          <div>
-                            <span className="text-xs text-danger font-medium mb-1 block">Escludi stati</span>
-                            <CountryPicker selected={excludedCountries} onChange={setExcludedCountries} />
-                          </div>
-                          <div>
-                            <span className="text-xs text-danger font-medium mb-1 block">Escludi regioni</span>
-                            <RegionPicker selected={excludedRegions} onChange={setExcludedRegions} accessToken={settings.accessToken} countries={countries} />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {needsDsa && (
-                      <div className="bg-white/60 rounded-lg p-3 space-y-2.5">
-                        <div className="flex items-center gap-1.5">
-                          <svg className="w-3.5 h-3.5 text-accent flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <span className="text-xs font-medium text-accent">EU Digital Services Act (DSA)</span>
-                        </div>
-                        <div>
-                          <label className="block text-xs text-text-secondary mb-1">Beneficiary</label>
-                          <input type="text" value={dsaBeneficiary} onChange={(e) => setDsaBeneficiary(e.target.value)} className={inputCls} placeholder="Name of the person or organization..." />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-text-secondary mb-1">Payor</label>
-                          <input type="text" value={dsaPayor} onChange={(e) => setDsaPayor(e.target.value)} className={inputCls} placeholder="Who is paying for these ads..." />
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-text-secondary mb-1">Age Min</label>
-                        <input type="number" min="13" max="65" value={ageMin} onChange={(e) => setAgeMin(e.target.value)} className={inputCls} />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-text-secondary mb-1">Age Max</label>
-                        <input type="number" min="13" max="65" value={ageMax} onChange={(e) => setAgeMax(e.target.value)} className={inputCls} />
-                      </div>
-                      <Select label="Gender" value={gender} onChange={setGender} options={[{ value: 'all', label: 'All' }, { value: 'male', label: 'Male' }, { value: 'female', label: 'Female' }]} />
-                    </div>
-
-                    {!isCBO && (
-                      <div>
-                        <label className="block text-xs font-medium text-text-secondary mb-2">Ad Set Spend Limits</label>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs text-text-secondary mb-1">Daily Min Spend ($)</label>
-                            <div className="relative">
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary">$</span>
-                              <input type="number" step="0.01" min="0" value={dailyMinSpend} onChange={(e) => setDailyMinSpend(e.target.value)} className={`${inputCls} pl-7`} placeholder="0.00" />
-                            </div>
-                          </div>
-                          <div>
-                            <label className="block text-xs text-text-secondary mb-1">Daily Spend Cap ($)</label>
-                            <div className="relative">
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary">$</span>
-                              <input type="number" step="0.01" min="0" value={dailySpendCap} onChange={(e) => setDailySpendCap(e.target.value)} className={`${inputCls} pl-7`} placeholder="0.00" />
-                            </div>
-                          </div>
-                        </div>
-                        <p className="text-xs text-text-secondary mt-1">Leave empty for no limits</p>
-                      </div>
-                    )}
-                  </div>
+                {selectedCampaignObj && (
+                  <p className="text-xs text-text-secondary">
+                    {isCBO ? 'CBO — budget at campaign level' : 'ABO — budget at ad set level'}
+                    {selectedCampaignObj.bid_strategy && ` · ${BID_STRATEGIES.find((b) => b.value === selectedCampaignObj.bid_strategy)?.label || selectedCampaignObj.bid_strategy}`}
+                  </p>
                 )}
               </>
             )}
           </div>
 
-          {/* Ad Set config */}
-          {mode === 'new' && (
-            <div className="bg-white rounded-xl border border-border p-5 space-y-4">
-              <h2 className="text-sm font-semibold">Ad Set</h2>
-
-              <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1">Ad Set Name</label>
-                <input type="text" value={adSetName} onChange={(e) => setAdSetName(e.target.value)} className={inputCls} placeholder="es. Italy 18-65 All" />
-              </div>
-
-              <Select label="Optimization Goal" value={optimizationGoal} onChange={setOptimizationGoal} options={OPTIMIZATION_GOALS} />
-
-              <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1">Dataset (Pixel)</label>
-                <select value={selectedPixel} onChange={(e) => setSelectedPixel(e.target.value)} className={inputCls}>
-                  <option value="">No pixel</option>
-                  {pixels.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.id})</option>)}
-                </select>
-              </div>
-
-              {selectedPixel && (
-                <Select label="Conversion Event" value={conversionEvent} onChange={setConversionEvent} options={CONVERSION_EVENTS} />
-              )}
-
-              <Select label="Attribution Model" value={attributionSetting} onChange={setAttributionSetting} options={ATTRIBUTION_SETTINGS} />
-
-              <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1">Data di inizio</label>
-                <DateTimePicker value={startDate} onChange={setStartDate} placeholder="Inizia subito" />
-                <p className="text-xs text-text-secondary mt-1">Lascia vuoto per iniziare subito</p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1">Countries & Regions</label>
-
-                {/* Preset bar */}
-                <div className="flex items-center flex-wrap gap-1.5 mb-2">
-                  {countryPresets.map((p) => (
-                    <div key={p.name} className="group relative">
-                      <button
-                        type="button"
-                        onClick={() => loadPreset(p)}
-                        className="px-3 py-1.5 text-xs font-medium bg-accent/10 text-accent rounded-lg hover:bg-accent hover:text-white hover:shadow-md hover:scale-[1.04] transition-all duration-150 cursor-pointer"
-                      >
-                        {p.name}
-                      </button>
-                      {/* Delete badge — only visible on hover */}
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); deletePreset(p.name); }}
-                        className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-danger text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 scale-75 group-hover:scale-100 transition-all duration-150 shadow-sm"
-                        title="Elimina preset"
-                      >
-                        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                      {/* Tooltip on hover */}
-                      <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                        <div className="bg-gray-900 text-white text-[10px] leading-relaxed rounded-lg px-3 py-2 shadow-lg whitespace-nowrap">
-                          <div><span className="text-gray-400">Include:</span> {p.countries?.join(', ') || 'nessuno'}</div>
-                          {p.excludedCountries?.length > 0 && (
-                            <div><span className="text-gray-400">Esclusi:</span> {p.excludedCountries.join(', ')}</div>
-                          )}
-                          {p.excludedRegions?.length > 0 && (
-                            <div><span className="text-gray-400">Regioni escluse:</span> {p.excludedRegions.map((r) => r.name).join(', ')}</div>
-                          )}
-                          <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45" />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {!showSavePreset ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowSavePreset(true)}
-                      className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-text-secondary hover:text-accent border border-dashed border-border hover:border-accent rounded-lg transition-all duration-150 whitespace-nowrap"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                      </svg>
-                      Salva preset
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <input
-                        type="text"
-                        value={presetName}
-                        onChange={(e) => setPresetName(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && savePreset(presetName)}
-                        placeholder="Nome..."
-                        className="w-24 border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-accent/30"
-                        autoFocus
-                      />
-                      <button type="button" onClick={() => savePreset(presetName)} className="px-2 py-1 text-xs font-medium text-accent hover:text-accent-hover">
-                        Salva
-                      </button>
-                      <button type="button" onClick={() => { setShowSavePreset(false); setPresetName(''); }} className="px-1 py-1 text-xs text-text-secondary hover:text-text">
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Include countries */}
-                <CountryPicker selected={countries} onChange={setCountries} />
-
-                {/* Exclusion toggle */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next = !showExclusions;
-                    setShowExclusions(next);
-                    if (!next) { setExcludedCountries([]); setExcludedRegions([]); }
-                  }}
-                  className={`mt-2 flex items-center gap-1.5 text-xs font-medium transition-colors ${showExclusions ? 'text-danger' : 'text-text-secondary hover:text-danger'}`}
-                >
-                  <svg className={`w-3.5 h-3.5 transition-transform duration-150 ${showExclusions ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                  {showExclusions ? 'Esclusioni attive' : 'Aggiungi esclusioni'}
+          {/* Ad Sets */}
+          <div className="space-y-3">
+            {/* Toolbar */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-semibold">Ad Sets</span>
+              <span className="px-2 py-0.5 text-xs font-bold bg-accent/10 text-accent rounded-full">{adSetsState.length}</span>
+              <div className="flex-1" />
+              {/* Quick add N copies */}
+              <div className="flex items-center gap-1">
+                <input
+                  type="number" min="1" max="50" defaultValue="5"
+                  id="adset-count-input"
+                  className="w-14 border border-border rounded-lg px-2 py-1.5 text-xs text-center focus:outline-none focus:ring-1 focus:ring-accent/30"
+                />
+                <button type="button" onClick={() => {
+                  const count = Number(document.getElementById('adset-count-input')?.value) || 1;
+                  duplicateFirst(count);
+                }}
+                  className="px-2.5 py-1.5 text-xs font-medium bg-bg border border-border rounded-lg hover:bg-accent hover:text-white hover:border-accent transition-colors whitespace-nowrap">
+                  Duplicate first
                 </button>
-
-                {/* Exclusion fields — only when enabled */}
-                {showExclusions && (
-                  <div className="mt-2 space-y-2 pl-3 border-l-2 border-danger/20">
-                    {/* Exclude countries */}
-                    <div>
-                      <span className="text-xs text-danger font-medium mb-1 block">Escludi stati</span>
-                      <CountryPicker selected={excludedCountries} onChange={setExcludedCountries} />
-                    </div>
-
-                    {/* Exclude regions */}
-                    <div>
-                      <span className="text-xs text-danger font-medium mb-1 block">Escludi regioni</span>
-                      <RegionPicker selected={excludedRegions} onChange={setExcludedRegions} accessToken={settings.accessToken} countries={countries} />
-                    </div>
-                  </div>
-                )}
               </div>
-
-              {/* DSA fields (EU/EEA only) */}
-              {needsDsa && (
-                <div className="bg-accent/5 rounded-lg p-3 space-y-2.5">
-                  <div className="flex items-center gap-1.5">
-                    <svg className="w-3.5 h-3.5 text-accent flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span className="text-xs font-medium text-accent">EU Digital Services Act (DSA)</span>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-text-secondary mb-1">Beneficiary</label>
-                    <input type="text" value={dsaBeneficiary} onChange={(e) => setDsaBeneficiary(e.target.value)} className={inputCls} placeholder="Name of the person or organization..." />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-text-secondary mb-1">Payor</label>
-                    <input type="text" value={dsaPayor} onChange={(e) => setDsaPayor(e.target.value)} className={inputCls} placeholder="Who is paying for these ads..." />
-                  </div>
-                </div>
+              <button type="button" onClick={() => addAdSet()}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add Ad Set
+              </button>
+              {/* In existing mode: add from existing campaign adsets */}
+              {mode === 'existing' && apiAdSets.length > 0 && (
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const apiAs = apiAdSets.find((a) => a.id === e.target.value);
+                    if (!apiAs) return;
+                    // Check if already added
+                    if (adSetsState.some((as) => as.existingId === apiAs.id)) {
+                      addToast('Ad set already added', 'error');
+                      return;
+                    }
+                    setAdSetsState((prev) => [...prev, makeDefaultAdSet({
+                      _type: 'existing',
+                      existingId: apiAs.id,
+                      name: apiAs.name,
+                    })]);
+                  }}
+                  className="border border-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white"
+                >
+                  <option value="">+ Add existing...</option>
+                  {apiAdSets.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name} — {a.status}</option>
+                  ))}
+                </select>
               )}
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1">Age Min</label>
-                  <input type="number" min="13" max="65" value={ageMin} onChange={(e) => setAgeMin(e.target.value)} className={inputCls} />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1">Age Max</label>
-                  <input type="number" min="13" max="65" value={ageMax} onChange={(e) => setAgeMax(e.target.value)} className={inputCls} />
-                </div>
-                <Select label="Gender" value={gender} onChange={setGender} options={[{ value: 'all', label: 'All' }, { value: 'male', label: 'Male' }, { value: 'female', label: 'Female' }]} />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-text-secondary mb-2">Ad Set Spend Limits</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-text-secondary mb-1">Daily Min Spend ($)</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary">$</span>
-                      <input type="number" step="0.01" min="0" value={dailyMinSpend} onChange={(e) => setDailyMinSpend(e.target.value)} className={`${inputCls} pl-7`} placeholder="0.00" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-text-secondary mb-1">Daily Spend Cap ($)</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary">$</span>
-                      <input type="number" step="0.01" min="0" value={dailySpendCap} onChange={(e) => setDailySpendCap(e.target.value)} className={`${inputCls} pl-7`} placeholder="0.00" />
-                    </div>
-                  </div>
-                </div>
-                <p className="text-xs text-text-secondary mt-1">Leave empty for no limits</p>
-              </div>
             </div>
-          )}
+
+            {/* Ad Set Cards */}
+            {adSetsState.map((as, i) => (
+              <AdSetCard
+                key={as._id}
+                adSet={as}
+                index={i}
+                total={adSetsState.length}
+                pixels={pixels}
+                accessToken={settings.accessToken}
+                countryPresets={countryPresets}
+                onLoadPreset={loadPreset}
+                onSavePreset={savePreset}
+                onDeletePreset={deletePreset}
+                onUpdate={updateAdSet}
+                onDuplicate={duplicateAdSet}
+                onRemove={removeAdSet}
+                isCBO={isCBO}
+                budgetType={budgetType}
+                bidStrategy={bidStrategy}
+              />
+            ))}
+          </div>
 
           {/* Page & Instagram Account */}
           <div className="bg-white rounded-xl border border-border p-5 space-y-4">
@@ -1417,8 +1289,8 @@ export default function Upload() {
                   files.map((creative, index) => (
                     <CreativeCard key={creative.id} creative={creative} index={index}
                       onToggleCustom={handleToggleCustom} onUpdateField={handleUpdateField} onRemove={handleRemove}
-                      isCarousel isFirst={index === 0} isLast={index === files.length - 1} onMove={handleMove}
-                      globalCopy={globalCopy} />
+                      isCarousel={creativeType === 'carousel'} isFirst={index === 0} isLast={index === files.length - 1} onMove={handleMove}
+                      globalCopy={globalCopy} adSets={adSetsState} onAdSetAssignment={handleAdSetAssignment} />
                   ))
                 )}
               </div>
@@ -1481,7 +1353,7 @@ export default function Upload() {
       </div>
 
       {/* Launch Modal */}
-      <Modal open={showLaunchModal} onClose={() => setShowLaunchModal(false)} title="Launch Ads" maxWidth="max-w-md">
+      <Modal open={showLaunchModal} onClose={() => setShowLaunchModal(false)} title="Launch Ads" maxWidth="max-w-lg">
         <div className="space-y-4">
           <div className="bg-bg rounded-lg p-4 space-y-2 text-sm">
             {mode === 'new' ? (
@@ -1489,32 +1361,56 @@ export default function Upload() {
                 <div className="flex justify-between"><span className="text-text-secondary">Campaign (new)</span><span className="font-medium">{campaignName}</span></div>
                 <div className="flex justify-between"><span className="text-text-secondary">Objective</span><span className="font-medium">{CAMPAIGN_OBJECTIVES.find((o) => o.value === objective)?.label}</span></div>
                 <div className="flex justify-between"><span className="text-text-secondary">Bid Strategy</span><span className="font-medium">{BID_STRATEGIES.find((b) => b.value === bidStrategy)?.label}</span></div>
-                {needsBidAmount && bidAmount && (
-                  <div className="flex justify-between"><span className="text-text-secondary">{bidStrategy === 'COST_CAP' ? 'Cost Cap' : 'Bid Cap'}</span><span className="font-medium">${Number(bidAmount).toFixed(2)}</span></div>
-                )}
-                <div className="flex justify-between"><span className="text-text-secondary">Ad Set (new)</span><span className="font-medium">{adSetName}</span></div>
-                <div className="flex justify-between"><span className="text-text-secondary">Budget</span><span className="font-medium">${Number(dailyBudget).toFixed(2)}/day ({budgetType})</span></div>
-                {selectedPixel && (
-                  <div className="flex justify-between"><span className="text-text-secondary">Conversion</span><span className="font-medium">{CONVERSION_EVENTS.find((e) => e.value === conversionEvent)?.label}</span></div>
-                )}
-                <div className="flex justify-between"><span className="text-text-secondary">Targeting</span><span className="font-medium">{countries.join(', ')}{excludedCountries.length > 0 ? ` (excl: ${excludedCountries.join(', ')})` : ''}{excludedRegions.length > 0 ? ` (reg. excl: ${excludedRegions.map((r) => r.name).join(', ')})` : ''} / {ageMin}-{ageMax} / {gender}</span></div>
-                {startDate && (
-                  <div className="flex justify-between"><span className="text-text-secondary">Start</span><span className="font-medium">{new Date(startDate).toLocaleString()}</span></div>
-                )}
               </>
             ) : (
-              <>
-                <div className="flex justify-between"><span className="text-text-secondary">Campaign</span><span className="font-medium">{campaigns.find((c) => c.id === selectedCampaign)?.name}</span></div>
-                <div className="flex justify-between"><span className="text-text-secondary">Ad Set{selectedAdSet === '__new__' ? ' (new)' : ''}</span><span className="font-medium">{selectedAdSet === '__new__' ? adSetName : adSets.find((a) => a.id === selectedAdSet)?.name}</span></div>
-                {selectedAdSet === '__new__' && !isCBO && (
-                  <div className="flex justify-between"><span className="text-text-secondary">Budget</span><span className="font-medium">${Number(dailyBudget).toFixed(2)}/day</span></div>
-                )}
-              </>
+              <div className="flex justify-between"><span className="text-text-secondary">Campaign</span><span className="font-medium">{campaigns.find((c) => c.id === selectedCampaign)?.name}</span></div>
             )}
+
+            <hr className="border-border" />
+
+            {/* Per-adset summary */}
+            <div className="space-y-1.5">
+              <span className="text-xs font-semibold text-text-secondary">Ad Sets ({adSetsState.length})</span>
+              {adSetsState.map((as) => {
+                const assignedCount = creativeType === 'carousel'
+                  ? files.length
+                  : files.filter((f) => {
+                      const ids = f.adSetIds || ['__all__'];
+                      return ids.includes('__all__') || ids.includes(as._id);
+                    }).length;
+                return (
+                  <div key={as._id} className="flex items-center gap-2 text-xs">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: as._color }} />
+                    <span className="font-medium flex-1 truncate">{as.name || '(unnamed)'}</span>
+                    {as._type === 'existing' && <span className="text-text-secondary">existing</span>}
+                    {as._type !== 'existing' && !isCBO && <span className="text-text-secondary">${Number(as.dailyBudget || 0).toFixed(2)}/day</span>}
+                    <span className="text-text-secondary">{assignedCount} creative{assignedCount !== 1 ? 's' : ''}</span>
+                  </div>
+                );
+              })}
+            </div>
+
             <hr className="border-border" />
             <div className="flex justify-between"><span className="text-text-secondary">Type</span><span className="font-medium">{creativeType === 'carousel' ? 'Carousel' : 'Single Ads'}</span></div>
             <div className="flex justify-between"><span className="text-text-secondary">Creatives</span><span className="font-medium">{files.length}</span></div>
-            <div className="flex justify-between"><span className="text-text-secondary">Custom copy</span><span className="font-medium">{files.filter((f) => f.useCustomCopy).length} of {files.length}</span></div>
+            {(() => {
+              // Count total ads to be created
+              let totalAds = 0;
+              if (creativeType === 'carousel') {
+                totalAds = adSetsState.length;
+              } else {
+                for (const f of files) {
+                  const ids = f.adSetIds || ['__all__'];
+                  totalAds += ids.includes('__all__') ? adSetsState.length : ids.filter((id) => adSetsState.some((as) => as._id === id)).length;
+                }
+              }
+              return (
+                <div className="flex justify-between font-medium">
+                  <span className="text-text-secondary">Total ads</span>
+                  <span className="text-accent">{totalAds}</span>
+                </div>
+              );
+            })()}
             <div className="flex justify-between"><span className="text-text-secondary">Page</span><span className="font-medium">{pages.find((p) => p.id === selectedPage)?.name || selectedPage}</span></div>
           </div>
 
