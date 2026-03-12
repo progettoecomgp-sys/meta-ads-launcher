@@ -7,8 +7,8 @@ import { OPTIMIZATION_GOALS, CONVERSION_EVENTS, ATTRIBUTION_SETTINGS, DSA_COUNTR
 
 export default function AdSetCard({
   adSet, index, total, pixels, accessToken,
-  countryPresets, onLoadPreset, onSavePreset, onDeletePreset,
-  onUpdate, onDuplicate, onRemove, isCBO, budgetType, bidStrategy,
+  countryPresets,
+  onUpdate, onDuplicate, onRemove, isCBO, bidStrategy,
 }) {
   const [collapsed, setCollapsed] = useState(adSet._collapsed ?? false);
   const inputCls = "w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent bg-white";
@@ -19,14 +19,10 @@ export default function AdSetCard({
   const needsRoas = bidStrategy === 'LOWEST_COST_WITH_MIN_ROAS';
   const needsDsa = (adSet.countries || []).some((c) => DSA_COUNTRIES.has(c));
 
-  // Preset UI state (local to each card)
-  const [showSavePreset, setShowSavePreset] = useState(false);
-  const [presetName, setPresetName] = useState('');
-
   // Summary text when collapsed
   const summary = [
     adSet.countries?.length ? adSet.countries.join(', ') : '',
-    `$${adSet.dailyBudget || '0'}/day`,
+    !isCBO ? `$${adSet.dailyBudget || '0'}/day` : '',
     `${adSet.ageMin || '18'}-${adSet.ageMax || '65'}`,
     adSet.gender !== 'all' ? adSet.gender : '',
   ].filter(Boolean).join(' · ');
@@ -131,21 +127,21 @@ export default function AdSetCard({
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary">$</span>
-                <input type="number" step="0.01" min="0.01" value={adSet.bidAmount} onChange={(e) => set('bidAmount', e.target.value)} className={`${inputCls} pl-7`} placeholder="5.00" />
+                <input type="number" step="0.01" min="0.01" value={adSet.bidAmount ?? ''} onChange={(e) => set('bidAmount', e.target.value)} className={`${inputCls} pl-7`} placeholder="5.00" />
               </div>
             </div>
           )}
           {needsRoas && (
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1">Minimum ROAS</label>
-              <input type="number" step="0.01" min="0.01" value={adSet.bidAmount} onChange={(e) => set('bidAmount', e.target.value)} className={inputCls} placeholder="2.00" />
+              <input type="number" step="0.01" min="0.01" value={adSet.bidAmount ?? ''} onChange={(e) => set('bidAmount', e.target.value)} className={inputCls} placeholder="2.00" />
             </div>
           )}
 
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1">Data di inizio</label>
-            <DateTimePicker value={adSet.startDate} onChange={(v) => set('startDate', v)} placeholder="Inizia subito" />
-            <p className="text-xs text-text-secondary mt-1">Lascia vuoto per iniziare subito</p>
+            <label className="block text-xs font-medium text-text-secondary mb-1">Start Date</label>
+            <DateTimePicker value={adSet.startDate} onChange={(v) => set('startDate', v)} placeholder="Start immediately" />
+            <p className="text-xs text-text-secondary mt-1">Leave empty to start immediately</p>
           </div>
 
           <div>
@@ -181,17 +177,17 @@ export default function AdSetCard({
               <svg className={`w-3.5 h-3.5 transition-transform duration-150 ${adSet.showExclusions ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
-              {adSet.showExclusions ? 'Esclusioni attive' : 'Aggiungi esclusioni'}
+              {adSet.showExclusions ? 'Exclusions active' : 'Add exclusions'}
             </button>
 
             {adSet.showExclusions && (
               <div className="mt-2 space-y-2 pl-3 border-l-2 border-danger/20">
                 <div>
-                  <span className="text-xs text-danger font-medium mb-1 block">Escludi stati</span>
+                  <span className="text-xs text-danger font-medium mb-1 block">Exclude countries</span>
                   <CountryPicker selected={adSet.excludedCountries} onChange={(v) => set('excludedCountries', v)} />
                 </div>
                 <div>
-                  <span className="text-xs text-danger font-medium mb-1 block">Escludi regioni</span>
+                  <span className="text-xs text-danger font-medium mb-1 block">Exclude regions</span>
                   <RegionPicker selected={adSet.excludedRegions} onChange={(v) => set('excludedRegions', v)} accessToken={accessToken} countries={adSet.countries} />
                 </div>
               </div>
@@ -209,11 +205,11 @@ export default function AdSetCard({
               </div>
               <div>
                 <label className="block text-xs text-text-secondary mb-1">Beneficiary</label>
-                <input type="text" value={adSet.dsaBeneficiary} onChange={(e) => set('dsaBeneficiary', e.target.value)} className={inputCls} placeholder="Name of the person or organization..." />
+                <input type="text" value={adSet.dsaBeneficiary ?? ''} onChange={(e) => set('dsaBeneficiary', e.target.value)} className={inputCls} placeholder="Name of the person or organization..." />
               </div>
               <div>
                 <label className="block text-xs text-text-secondary mb-1">Payor</label>
-                <input type="text" value={adSet.dsaPayor} onChange={(e) => set('dsaPayor', e.target.value)} className={inputCls} placeholder="Who is paying for these ads..." />
+                <input type="text" value={adSet.dsaPayor ?? ''} onChange={(e) => set('dsaPayor', e.target.value)} className={inputCls} placeholder="Who is paying for these ads..." />
               </div>
             </div>
           )}
@@ -238,14 +234,14 @@ export default function AdSetCard({
                   <label className="block text-xs text-text-secondary mb-1">Daily Min Spend ($)</label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary">$</span>
-                    <input type="number" step="0.01" min="0" value={adSet.dailyMinSpend} onChange={(e) => set('dailyMinSpend', e.target.value)} className={`${inputCls} pl-7`} placeholder="0.00" />
+                    <input type="number" step="0.01" min="0" value={adSet.dailyMinSpend ?? ''} onChange={(e) => set('dailyMinSpend', e.target.value)} className={`${inputCls} pl-7`} placeholder="0.00" />
                   </div>
                 </div>
                 <div>
                   <label className="block text-xs text-text-secondary mb-1">Daily Spend Cap ($)</label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary">$</span>
-                    <input type="number" step="0.01" min="0" value={adSet.dailySpendCap} onChange={(e) => set('dailySpendCap', e.target.value)} className={`${inputCls} pl-7`} placeholder="0.00" />
+                    <input type="number" step="0.01" min="0" value={adSet.dailySpendCap ?? ''} onChange={(e) => set('dailySpendCap', e.target.value)} className={`${inputCls} pl-7`} placeholder="0.00" />
                   </div>
                 </div>
               </div>

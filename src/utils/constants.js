@@ -250,7 +250,7 @@ export const COUNTRIES = [
   { code: 'PE', name: 'Peru' },
 ];
 
-export const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png'];
+export const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif'];
 export const ACCEPTED_VIDEO_TYPES = ['video/mp4', 'video/quicktime'];
 export const ACCEPTED_FILE_TYPES = [...ACCEPTED_IMAGE_TYPES, ...ACCEPTED_VIDEO_TYPES];
 export const MAX_FILE_SIZE = 4 * 1024 * 1024 * 1024; // 4GB

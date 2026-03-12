@@ -5,7 +5,8 @@ function getHeaders(token) {
 }
 
 function actId(accountId) {
-  return `act_${accountId}`;
+  const id = String(accountId).replace(/^act_/, '');
+  return `act_${id}`;
 }
 
 function extractError(err) {
@@ -69,11 +70,31 @@ async function apiFetch(url, options, label) {
   logApi(method, label || url, bodyForLog, res);
 
   if (!res.ok) {
-    const err = await res.json();
+    let err;
+    try { err = await res.json(); } catch { err = { error: { message: `HTTP ${res.status} ${res.statusText}` } }; }
     logApiError(method, label || url, err, bodyForLog);
     throw new Error(extractError(err));
   }
   return res;
+}
+
+// Retry wrapper for rate limits (HTTP 429, error code 17/32)
+async function apiFetchRetry(url, options, label, retries = 3) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await apiFetch(url, options, label);
+    } catch (err) {
+      const msg = err.message?.toLowerCase() || '';
+      const isRateLimit = msg.includes('rate limit') || msg.includes('too many calls') || msg.includes('limit reached') || msg.includes('(#17)') || msg.includes('(#32)');
+      if (attempt < retries && isRateLimit) {
+        const wait = Math.pow(2, attempt) * 2000;
+        pushLog({ type: 'warn', method: 'RETRY', endpoint: label || url, errorMsg: `Rate limited, retry ${attempt + 1}/${retries} in ${wait / 1000}s` });
+        await new Promise((r) => setTimeout(r, wait));
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 // Test connection
@@ -349,7 +370,7 @@ export async function createCampaign(token, accountId, { name, objective, status
     params.append('is_adset_budget_sharing_enabled', budgetSharing ? 'true' : 'false');
   }
 
-  const res = await apiFetch(
+  const res = await apiFetchRetry(
     `${META_API_BASE}/${actId(accountId)}/campaigns`,
     { method: 'POST', headers: getHeaders(token), body: params },
     'createCampaign'
@@ -438,7 +459,7 @@ export async function createAdSet(token, accountId, {
     params.append('daily_spend_cap', String(dailySpendCap));
   }
 
-  const res = await apiFetch(
+  const res = await apiFetchRetry(
     `${META_API_BASE}/${actId(accountId)}/adsets`,
     { method: 'POST', headers: getHeaders(token), body: params },
     'createAdSet'
@@ -451,13 +472,14 @@ export async function uploadImage(token, accountId, file) {
   const formData = new FormData();
   formData.append('filename', file);
 
-  const res = await apiFetch(
+  const res = await apiFetchRetry(
     `${META_API_BASE}/${actId(accountId)}/adimages`,
     { method: 'POST', headers: getHeaders(token), body: formData },
     `uploadImage(${file.name})`
   );
   const data = await res.json();
   const images = data.images;
+  if (!images || Object.keys(images).length === 0) throw new Error(`Image upload failed: no hash returned for ${file.name}`);
   const key = Object.keys(images)[0];
   return { hash: images[key].hash, url: images[key].url };
 }
@@ -473,7 +495,8 @@ export async function uploadVideo(token, accountId, file, onProgress) {
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    const timer = setTimeout(() => { xhr.abort(); reject(new Error(`Video upload timed out (5 min): ${file.name}`)); }, 5 * 60 * 1000);
+    const timeoutMs = Math.max(5 * 60 * 1000, (file.size / (1024 * 1024)) * 2000); // min 5min, or 2s per MB
+    const timer = setTimeout(() => { xhr.abort(); reject(new Error(`Video upload timed out: ${file.name}`)); }, timeoutMs);
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) {
@@ -567,7 +590,7 @@ export async function createImageCreative(token, accountId, {
   });
   if (urlTags) params.set('url_tags', urlTags);
 
-  const res = await apiFetch(
+  const res = await apiFetchRetry(
     `${META_API_BASE}/${actId(accountId)}/adcreatives`,
     { method: 'POST', headers: getHeaders(token), body: params },
     'createImageCreative'
@@ -584,7 +607,7 @@ export async function createVideoCreative(token, accountId, {
     link_description: description || '',
     message: message || '',
     title: headline || '',
-    call_to_action: { type: cta || 'LEARN_MORE', value: { link: linkUrl } },
+    ...(cta && cta !== 'NO_BUTTON' ? { call_to_action: { type: cta, value: { link: linkUrl } } } : { call_to_action: { type: 'LEARN_MORE', value: { link: linkUrl } } }),
   };
   if (imageHash) {
     videoData.image_hash = imageHash;
@@ -607,7 +630,7 @@ export async function createVideoCreative(token, accountId, {
   });
   if (urlTags) params.set('url_tags', urlTags);
 
-  const res = await apiFetch(
+  const res = await apiFetchRetry(
     `${META_API_BASE}/${actId(accountId)}/adcreatives`,
     { method: 'POST', headers: getHeaders(token), body: params },
     'createVideoCreative'
@@ -659,7 +682,7 @@ export async function createCarouselCreative(token, accountId, {
   });
   if (urlTags) params.set('url_tags', urlTags);
 
-  const res = await apiFetch(
+  const res = await apiFetchRetry(
     `${META_API_BASE}/${actId(accountId)}/adcreatives`,
     { method: 'POST', headers: getHeaders(token), body: params },
     'createCarouselCreative'
@@ -676,7 +699,7 @@ export async function createAd(token, accountId, { name, adSetId, creativeId, st
     status: status || 'PAUSED',
   });
 
-  const res = await apiFetch(
+  const res = await apiFetchRetry(
     `${META_API_BASE}/${actId(accountId)}/ads`,
     { method: 'POST', headers: getHeaders(token), body: params },
     'createAd'

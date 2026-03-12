@@ -175,19 +175,19 @@ export function AppProvider({ children }) {
   const setSettings = useCallback((update) => {
     setSettingsState((prev) => {
       const next = typeof update === 'function' ? update(prev) : { ...prev, ...update };
-
-      // Async write to Supabase
+      // Schedule Supabase write outside the updater (must be pure)
       if (user) {
-        supabase.from('user_settings').update({
-          access_token: next.accessToken,
-          ad_account_id: next.adAccountId,
-          utm_template: next.utmTemplate,
-          enhancements: next.enhancements,
-        }).eq('user_id', user.id).then(({ error }) => {
-          if (error) console.error('Failed to save settings:', error);
+        Promise.resolve().then(() => {
+          supabase.from('user_settings').update({
+            access_token: next.accessToken,
+            ad_account_id: next.adAccountId,
+            utm_template: next.utmTemplate,
+            enhancements: next.enhancements,
+          }).eq('user_id', user.id).then(({ error }) => {
+            if (error) console.error('Failed to save settings:', error);
+          });
         });
       }
-
       return next;
     });
   }, [user]);

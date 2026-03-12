@@ -11,7 +11,7 @@ function getFileExt(name) {
   return name.split('.').pop().toUpperCase();
 }
 
-export default function CreativeCard({ creative, index, onToggleCustom, onUpdateField, onRemove, isCarousel, isFirst, isLast, onMove, globalCopy, adSets, onAdSetAssignment, isSelected, onToggleSelect }) {
+export default function CreativeCard({ creative, index, onToggleCustom, onUpdateField, onRemove, isCarousel, isFirst, isLast, onMove, globalCopy, adSets, isSelected, onToggleSelect }) {
   const [thumbnail, setThumbnail] = useState(null);
   const isImage = ACCEPTED_IMAGE_TYPES.includes(creative.file.type);
 
@@ -21,6 +21,7 @@ export default function CreativeCard({ creative, index, onToggleCustom, onUpdate
       setThumbnail(url);
       return () => URL.revokeObjectURL(url);
     } else {
+      let revoked = false;
       const video = document.createElement('video');
       video.preload = 'metadata';
       video.muted = true;
@@ -33,7 +34,16 @@ export default function CreativeCard({ creative, index, onToggleCustom, onUpdate
         canvas.height = 120;
         canvas.getContext('2d').drawImage(video, 0, 0, 120, 120);
         setThumbnail(canvas.toDataURL());
-        URL.revokeObjectURL(url);
+        if (!revoked) { URL.revokeObjectURL(url); revoked = true; }
+      };
+      video.onerror = () => {
+        if (!revoked) { URL.revokeObjectURL(url); revoked = true; }
+      };
+      return () => {
+        video.onloadeddata = null;
+        video.onseeked = null;
+        video.onerror = null;
+        if (!revoked) { URL.revokeObjectURL(url); revoked = true; }
       };
     }
   }, [creative.file, isImage]);
@@ -159,7 +169,7 @@ export default function CreativeCard({ creative, index, onToggleCustom, onUpdate
       {/* Inline custom fields */}
       {creative.useCustomCopy && (
         <div className="px-3 pb-3 pt-1 border-t border-border bg-bg/50 space-y-2">
-          <div className="text-xs font-medium text-accent mb-1">Override — lascia vuoto per usare il valore globale</div>
+          <div className="text-xs font-medium text-accent mb-1">Override — leave empty to use global value</div>
           <textarea
             rows={2}
             value={creative.primaryText}
