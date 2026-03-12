@@ -346,6 +346,32 @@ export default function Upload() {
 
   // Creatives (file objects can't be saved to sessionStorage)
   const [files, setFiles] = useState([]);
+  const [selectedCreativeIds, setSelectedCreativeIds] = useState(new Set());
+
+  // Bulk assignment: assign selected creatives to adsets
+  const handleBulkAssign = useCallback((newAdSetIds) => {
+    setFiles((prev) => prev.map((f) => selectedCreativeIds.has(f.id) ? { ...f, adSetIds: newAdSetIds } : f));
+  }, [selectedCreativeIds]);
+
+  const toggleCreativeSelection = useCallback((id, shiftKey) => {
+    setSelectedCreativeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const selectAllCreatives = useCallback(() => {
+    setSelectedCreativeIds(new Set(files.map((f) => f.id)));
+  }, [files]);
+
+  const deselectAllCreatives = useCallback(() => {
+    setSelectedCreativeIds(new Set());
+  }, []);
 
   // Launch
   const [showLaunchModal, setShowLaunchModal] = useState(false);
@@ -481,23 +507,28 @@ export default function Upload() {
     ? !!(selectedCampaignObj?.daily_budget || selectedCampaignObj?.lifetime_budget)
     : budgetType === 'CBO';
 
-  // ---- Pre-fill new ad set defaults from existing ad sets ----
+  // ---- Auto-add existing ad sets when campaign is selected ----
   useEffect(() => {
     if (!apiAdSets.length || mode !== 'existing') return;
     const ref = apiAdSets.find((a) => a.status === 'ACTIVE') || apiAdSets[0];
-    // Pre-fill the first adSet with values from the existing campaign's ad sets
     setAdSetsState((prev) => {
-      if (prev.length === 0) return prev;
-      const first = prev[0];
-      if (first._type === 'existing') return prev; // don't overwrite existing
-      return [
-        { ...first,
-          optimizationGoal: ref.optimization_goal || first.optimizationGoal,
-          selectedPixel: ref.promoted_object?.pixel_id || first.selectedPixel,
-          conversionEvent: ref.promoted_object?.custom_event_type || first.conversionEvent,
-        },
-        ...prev.slice(1),
-      ];
+      // If we already have existing adsets from this campaign, skip
+      if (prev.some((as) => as._type === 'existing')) return prev;
+      // Auto-add all existing adsets + keep one new adset pre-filled
+      const existingEntries = apiAdSets.map((apiAs) => makeDefaultAdSet({
+        _type: 'existing',
+        existingId: apiAs.id,
+        name: apiAs.name,
+      }));
+      // Pre-fill the first "new" adset with values from existing
+      const firstNew = prev[0] || makeDefaultAdSet();
+      const prefilledNew = {
+        ...firstNew,
+        optimizationGoal: ref.optimization_goal || firstNew.optimizationGoal,
+        selectedPixel: ref.promoted_object?.pixel_id || firstNew.selectedPixel,
+        conversionEvent: ref.promoted_object?.custom_event_type || firstNew.conversionEvent,
+      };
+      return [...existingEntries, prefilledNew, ...prev.slice(1)];
     });
   }, [apiAdSets, mode]);
 
@@ -1044,7 +1075,7 @@ export default function Upload() {
               <>
                 <div>
                   <label className="block text-xs font-medium text-text-secondary mb-1">Campaign</label>
-                  <select value={selectedCampaign} onChange={(e) => { setSelectedCampaign(e.target.value); }} className={inputCls}>
+                  <select value={selectedCampaign} onChange={(e) => { setSelectedCampaign(e.target.value); setAdSetsState([makeDefaultAdSet()]); }} className={inputCls}>
                     <option value="">Select a campaign...</option>
                     {(() => {
                       const sorted = [...campaigns].sort((a, b) => (a.status === 'ACTIVE' ? 0 : 1) - (b.status === 'ACTIVE' ? 0 : 1));
@@ -1280,6 +1311,91 @@ export default function Upload() {
                 </div>
               )}
 
+              {/* Bulk assign toolbar — visible when 2+ adsets and single mode */}
+              {files.length > 0 && adSetsState.length > 1 && creativeType === 'single' && (
+                <div className="mb-3 flex items-center gap-2 flex-wrap px-1">
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={selectedCreativeIds.size === files.length && files.length > 0}
+                      ref={(el) => { if (el) el.indeterminate = selectedCreativeIds.size > 0 && selectedCreativeIds.size < files.length; }}
+                      onChange={() => selectedCreativeIds.size === files.length ? deselectAllCreatives() : selectAllCreatives()}
+                      className="w-3.5 h-3.5 rounded border-border text-accent focus:ring-accent/30 cursor-pointer"
+                    />
+                    <span className="text-xs text-text-secondary">
+                      {selectedCreativeIds.size > 0 ? `${selectedCreativeIds.size} selected` : 'Select all'}
+                    </span>
+                  </label>
+
+                  {selectedCreativeIds.size > 0 && (
+                    <>
+                      <span className="text-xs text-text-secondary">→</span>
+                      <span className="text-xs font-medium text-text-secondary">Assign to:</span>
+                      {adSetsState.map((as) => {
+                        // Check if all selected creatives are assigned to this adset
+                        const selectedFiles = files.filter((f) => selectedCreativeIds.has(f.id));
+                        const allAssigned = selectedFiles.every((f) => {
+                          const ids = f.adSetIds || ['__all__'];
+                          return ids.includes('__all__') || ids.includes(as._id);
+                        });
+                        const noneAssigned = selectedFiles.every((f) => {
+                          const ids = f.adSetIds || ['__all__'];
+                          return !ids.includes('__all__') && !ids.includes(as._id);
+                        });
+                        return (
+                          <button
+                            key={as._id}
+                            type="button"
+                            onClick={() => {
+                              setFiles((prev) => prev.map((f) => {
+                                if (!selectedCreativeIds.has(f.id)) return f;
+                                const ids = f.adSetIds || ['__all__'];
+                                if (allAssigned) {
+                                  // Remove this adset (but if was __all__, switch to all-except-this)
+                                  if (ids.includes('__all__')) {
+                                    const allOther = adSetsState.filter((a) => a._id !== as._id).map((a) => a._id);
+                                    return { ...f, adSetIds: allOther.length > 0 ? allOther : ['__all__'] };
+                                  }
+                                  const without = ids.filter((id) => id !== as._id);
+                                  return { ...f, adSetIds: without.length > 0 ? without : ['__all__'] };
+                                } else {
+                                  // Add this adset
+                                  if (ids.includes('__all__')) return f; // already included
+                                  const with_ = [...ids, as._id];
+                                  if (with_.length >= adSetsState.length) return { ...f, adSetIds: ['__all__'] };
+                                  return { ...f, adSetIds: with_ };
+                                }
+                              }));
+                            }}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border transition-all ${
+                              allAssigned
+                                ? 'border-accent bg-accent/10 text-accent'
+                                : noneAssigned
+                                  ? 'border-border bg-white text-text-secondary hover:border-accent hover:text-accent'
+                                  : 'border-accent/40 bg-accent/5 text-accent/70'
+                            }`}
+                          >
+                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: as._color }} />
+                            {as.name || '(unnamed)'}
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => handleBulkAssign(['__all__'])}
+                        className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-all ${
+                          files.filter((f) => selectedCreativeIds.has(f.id)).every((f) => (f.adSetIds || ['__all__']).includes('__all__'))
+                            ? 'border-accent bg-accent/10 text-accent'
+                            : 'border-border bg-white text-text-secondary hover:border-accent hover:text-accent'
+                        }`}
+                      >
+                        All
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-2">
                 {files.length === 0 ? (
                   <div className="text-center py-12 text-text-secondary text-sm">
@@ -1290,7 +1406,9 @@ export default function Upload() {
                     <CreativeCard key={creative.id} creative={creative} index={index}
                       onToggleCustom={handleToggleCustom} onUpdateField={handleUpdateField} onRemove={handleRemove}
                       isCarousel={creativeType === 'carousel'} isFirst={index === 0} isLast={index === files.length - 1} onMove={handleMove}
-                      globalCopy={globalCopy} adSets={adSetsState} onAdSetAssignment={handleAdSetAssignment} />
+                      globalCopy={globalCopy} adSets={adSetsState} onAdSetAssignment={handleAdSetAssignment}
+                      isSelected={selectedCreativeIds.has(creative.id)}
+                      onToggleSelect={adSetsState.length > 1 && creativeType === 'single' ? toggleCreativeSelection : undefined} />
                   ))
                 )}
               </div>
