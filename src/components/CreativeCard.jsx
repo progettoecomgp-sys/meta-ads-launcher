@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { ACCEPTED_IMAGE_TYPES, CTA_OPTIONS } from '../utils/constants';
-import CreativeAdSetPicker from './CreativeAdSetPicker';
 
 function formatSize(bytes) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
@@ -12,7 +11,7 @@ function getFileExt(name) {
   return name.split('.').pop().toUpperCase();
 }
 
-export default function CreativeCard({ creative, index, onToggleCustom, onUpdateField, onRemove, isCarousel, isFirst, isLast, onMove, globalCopy, adSets, onAdSetAssignment }) {
+export default function CreativeCard({ creative, index, onToggleCustom, onUpdateField, onRemove, isCarousel, isFirst, isLast, onMove, globalCopy, adSets, onAdSetAssignment, isSelected, onToggleSelect }) {
   const [thumbnail, setThumbnail] = useState(null);
   const isImage = ACCEPTED_IMAGE_TYPES.includes(creative.file.type);
 
@@ -39,10 +38,31 @@ export default function CreativeCard({ creative, index, onToggleCustom, onUpdate
     }
   }, [creative.file, isImage]);
 
+  // Adset assignment dots
+  const adSetIds = creative.adSetIds || ['__all__'];
+  const isAllAdSets = adSetIds.includes('__all__');
+  const assignedColors = isAllAdSets
+    ? (adSets || []).map((a) => a._color)
+    : adSetIds.map((id) => (adSets || []).find((a) => a._id === id)?._color).filter(Boolean);
+
   return (
-    <div className="rounded-lg border border-border overflow-hidden">
+    <div
+      className={`rounded-lg border transition-colors ${isSelected ? 'border-accent ring-2 ring-accent/20 bg-accent/[0.02]' : 'border-border'}`}
+      onClick={onToggleSelect ? (e) => { if (e.target.closest('input, button, select, textarea, label')) return; onToggleSelect(creative.id, e.shiftKey); } : undefined}
+      style={onToggleSelect ? { cursor: 'pointer' } : undefined}
+    >
       {/* Main row */}
       <div className="flex items-center gap-3 p-3">
+        {/* Selection checkbox (multi-adset single mode only) */}
+        {onToggleSelect && (
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onToggleSelect(creative.id)}
+            className="w-4 h-4 rounded border-border text-accent focus:ring-accent/30 cursor-pointer flex-shrink-0"
+          />
+        )}
+
         {/* Thumbnail */}
         <div className="w-[52px] h-[52px] rounded-lg overflow-hidden bg-bg flex-shrink-0 flex items-center justify-center">
           {thumbnail ? (
@@ -75,16 +95,23 @@ export default function CreativeCard({ creative, index, onToggleCustom, onUpdate
           </p>
         </div>
 
+        {/* Ad set assignment dots */}
+        {adSets && adSets.length > 1 && !isCarousel && assignedColors.length > 0 && (
+          <div className="flex items-center gap-0.5 flex-shrink-0" title={isAllAdSets ? 'All Ad Sets' : `${assignedColors.length} ad set${assignedColors.length > 1 ? 's' : ''}`}>
+            {assignedColors.slice(0, 5).map((color, i) => (
+              <span key={i} className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+            ))}
+            {assignedColors.length > 5 && (
+              <span className="text-[10px] text-text-secondary ml-0.5">+{assignedColors.length - 5}</span>
+            )}
+          </div>
+        )}
+
         {/* Status */}
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <div className="w-2 h-2 rounded-full bg-success" />
           <span className="text-xs text-success font-medium">Ready</span>
         </div>
-
-        {/* AdSet picker (multi-adset, single ads only) */}
-        {adSets && adSets.length > 1 && !isCarousel && (
-          <CreativeAdSetPicker adSets={adSets} selectedIds={creative.adSetIds || ['__all__']} onChange={(ids) => onAdSetAssignment(creative.id, ids)} />
-        )}
 
         {/* Reorder (carousel only) + Custom toggle + remove */}
         <div className="flex items-center gap-2 flex-shrink-0">
