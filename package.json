@@ -6,19 +6,39 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "start": "node server.js",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "audit:json": "node scripts/security-audit.js",
+    "deploy:staging": "~/.fly/bin/fly deploy --config fly.staging.toml",
+    "deploy:prod": "~/.fly/bin/fly deploy",
+    "maintenance:on": "~/.fly/bin/fly secrets set MAINTENANCE_MODE=true",
+    "maintenance:off": "~/.fly/bin/fly secrets unset MAINTENANCE_MODE"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
+    "@sentry/node": "^10.43.0",
+    "@sentry/react": "^10.43.0",
     "@supabase/supabase-js": "^2.98.0",
+    "compression": "^1.7.5",
+    "cors": "^2.8.6",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.3.1",
+    "helmet": "^8.1.0",
+    "otpauth": "^9.5.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^6.30.3"
+    "react-router-dom": "^6.30.3",
+    "stripe": "^20.4.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@tailwindcss/vite": "^4.2.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
@@ -26,7 +46,9 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "happy-dom": "^20.8.4",
     "tailwindcss": "^4.2.1",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^4.1.0"
   }
 }

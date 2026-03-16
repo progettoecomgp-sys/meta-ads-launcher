@@ -41,7 +41,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="p-6">
+    <div className="px-8 py-6">
       {!isConfigured && (
         <div className="mb-4 px-4 py-3 bg-warning/10 border border-warning/20 rounded-lg flex items-center gap-3 text-sm">
           <svg className="w-5 h-5 text-warning flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -53,13 +53,13 @@ export default function Dashboard() {
       )}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
           <p className="text-text-secondary text-sm mt-1">Overview of your ad performance</p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={() => navigate('/upload')}
-            className="px-4 py-2 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors"
+            className="px-4 py-2 bg-accent text-white rounded-md text-sm font-medium hover:bg-accent-hover transition-colors"
           >
             Upload Creatives
           </button>
@@ -70,7 +70,7 @@ export default function Dashboard() {
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="bg-white rounded-xl border border-border p-5 animate-pulse">
+            <div key={i} className="glass-card rounded-xl p-5 animate-pulse">
               <div className="h-3 bg-bg rounded w-16 mb-3" />
               <div className="h-6 bg-bg rounded w-20" />
             </div>
@@ -89,8 +89,8 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent campaigns */}
-        <div className="bg-white rounded-xl border border-border p-6">
-          <h2 className="text-sm font-semibold mb-4">Recent Campaigns</h2>
+        <div className="glass-card rounded-xl p-6">
+          <h2 className="text-[13px] font-semibold mb-4">Recent Campaigns</h2>
           {campaigns.length === 0 ? (
             <p className="text-sm text-text-secondary">No campaigns found.</p>
           ) : (
@@ -112,8 +112,8 @@ export default function Dashboard() {
         </div>
 
         {/* Recent launches */}
-        <div className="bg-white rounded-xl border border-border p-6">
-          <h2 className="text-sm font-semibold mb-4">Recent Launches</h2>
+        <div className="glass-card rounded-xl p-6">
+          <h2 className="text-[13px] font-semibold mb-4">Recent Launches</h2>
           {history.length === 0 ? (
             <p className="text-sm text-text-secondary">No launches yet.</p>
           ) : (

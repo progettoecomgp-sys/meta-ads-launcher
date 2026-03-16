@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import DropZone from '../components/DropZone';
 import CreativeCard from '../components/CreativeCard';
 import AdPreview from '../components/AdPreview';
@@ -10,6 +11,8 @@ import PagePicker from '../components/PagePicker';
 import AdSetCard from '../components/AdSetCard';
 import * as api from '../utils/metaApi';
 import { getApiLog, onApiLogChange } from '../utils/metaApi';
+import { logAction } from '../utils/auditLog';
+import UpgradeModal from '../components/UpgradeModal';
 
 const ADSET_COLORS = [
   '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981',
@@ -37,6 +40,13 @@ function makeDefaultAdSet(overrides = {}) {
 }
 
 let nextId = 1;
+
+// Module-level cache: File objects can't be serialized to sessionStorage,
+// so we keep them in memory to survive route changes (component remounts)
+let _cachedFiles = [];
+let _cachedSelectedIds = new Set();
+let _cachedSelectedUploadAdSets = ['__all__'];
+let _cachedViewMode = 'list';
 
 const FORM_KEY = 'meta-ads-upload-form';
 
@@ -81,7 +91,7 @@ function IgAccountPicker({ igAccounts, selected, onChange }) {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent bg-white flex items-center gap-2.5 min-h-[38px] text-left"
+        className="w-full border border-border rounded-md px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent/[0.15] focus:border-accent bg-white flex items-center gap-2.5 min-h-[38px] text-left"
       >
         {selectedIg ? (
           <>
@@ -159,47 +169,198 @@ function IgAccountPicker({ igAccounts, selected, onChange }) {
   );
 }
 
-function AdAccountBar({ adAccounts, settings, setSettings, inputCls }) {
+function PageAndIgSelector({ pages, selectedPage, onPageChange, igAccounts, selectedIg, onIgChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selPage = pages.find((p) => p.id === selectedPage);
+  const selIg = igAccounts.find((ig) => ig.id === selectedIg);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const getIgName = (ig) => {
+    if (!ig) return 'None';
+    if (ig.pageBacked) return ig.name || 'Facebook Page';
+    return ig?.username ? `@${ig.username}` : (ig?.name || ig?.id);
+  };
+
+  const getIgPic = (ig) =>
+    ig?.profile_picture_url || ig?.profile_pic || `https://graph.facebook.com/${ig.id}/picture?type=small`;
+
+  return (
+    <div className="relative" ref={ref}>
+      <p className="text-[10px] font-medium uppercase tracking-wider text-text-tertiary mb-0.5 px-3">Page & Identity</p>
+      <button type="button" onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-white/60 transition-colors text-left">
+        {selPage?.picture?.data?.url && (
+          <img src={selPage.picture.data.url} alt="" className="w-5 h-5 rounded-full object-cover flex-shrink-0" />
+        )}
+        <div className="min-w-0">
+          <p className="text-[13px] font-medium truncate max-w-[160px]">{selPage?.name || 'Select page'}</p>
+          {selIg && <p className="text-[10px] text-text-tertiary truncate">{getIgName(selIg)}</p>}
+        </div>
+        <svg className={`w-3.5 h-3.5 text-text-tertiary flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-border rounded-xl shadow-lg min-w-[300px] overflow-hidden">
+          {/* Facebook Pages */}
+          <div className="px-3 py-1.5 bg-bg/50 border-b border-border">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">Facebook Page</span>
+          </div>
+          <div className="max-h-[160px] overflow-y-auto">
+            {pages.map((p) => (
+              <button key={p.id} type="button"
+                onClick={() => onPageChange(p.id)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-accent/5 transition-colors ${p.id === selectedPage ? 'bg-accent/5' : ''}`}>
+                {p.picture?.data?.url && (
+                  <img src={p.picture.data.url} alt="" className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
+                )}
+                <span className={`text-[13px] truncate flex-1 ${p.id === selectedPage ? 'font-semibold text-accent' : 'font-medium'}`}>{p.name}</span>
+                {p.id === selectedPage && (
+                  <svg className="w-4 h-4 text-accent flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Instagram Accounts */}
+          <div className="px-3 py-1.5 bg-bg/50 border-t border-b border-border">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">Instagram Account</span>
+          </div>
+          <div className="max-h-[160px] overflow-y-auto">
+            <button type="button"
+              onClick={() => onIgChange('')}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-accent/5 transition-colors text-[13px] ${!selectedIg ? 'bg-accent/5 font-semibold text-accent' : 'text-text-secondary'}`}>
+              No Instagram account
+            </button>
+            {igAccounts.map((ig) => (
+              <button key={ig.id} type="button"
+                onClick={() => onIgChange(ig.id)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-accent/5 transition-colors ${ig.id === selectedIg ? 'bg-accent/5' : ''}`}>
+                <img src={getIgPic(ig)} alt="" className="w-6 h-6 rounded-full object-cover flex-shrink-0"
+                  onError={(e) => { e.target.style.display = 'none'; }} />
+                <div className="flex-1 min-w-0">
+                  <p className={`text-[13px] truncate ${ig.id === selectedIg ? 'font-semibold text-accent' : 'font-medium'}`}>
+                    {getIgName(ig)}
+                    {ig.pageBacked && <span className="text-[10px] text-text-tertiary ml-1">(FB page)</span>}
+                  </p>
+                  <p className="text-[10px] text-text-tertiary">{ig.id}</p>
+                </div>
+                {ig.id === selectedIg && (
+                  <svg className="w-4 h-4 text-accent flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            ))}
+            {igAccounts.length === 0 && (
+              <p className="px-3 py-2 text-[11px] text-text-tertiary">No IG accounts found for this page</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdAccountBar({ adAccounts, settings, setSettings }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
   const selectedAcc = adAccounts.find((a) => a.id === `act_${settings.adAccountId}`);
   const accStatus = selectedAcc?.account_status;
   const isActive = accStatus === 1;
   const statusLabel = STATUS_LABELS[accStatus] || '';
 
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
   return (
-    <div className="mb-6 bg-white rounded-xl border border-border p-3 flex items-center gap-3 max-w-xl">
-      <svg className="w-4 h-4 text-accent flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-      </svg>
-      <select
-        value={settings.adAccountId ? `act_${settings.adAccountId}` : ''}
-        onChange={(e) => setSettings({ adAccountId: e.target.value.replace('act_', '') })}
-        className="flex-1 border border-border rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent bg-white"
-      >
-        <option value="">Select an ad account...</option>
-        {(() => {
-          const sorted = [...adAccounts].sort((a, b) => (a.account_status === 1 ? 0 : 1) - (b.account_status === 1 ? 0 : 1));
-          const firstInactiveIdx = sorted.findIndex((a) => a.account_status !== 1);
-          return sorted.map((acc, i) => (
-            <React.Fragment key={acc.id}>
-              {i === firstInactiveIdx && firstInactiveIdx > 0 && <option disabled>{'─'.repeat(30)}</option>}
-              <option value={acc.id}>{acc.name} ({acc.id}) — {STATUS_LABELS[acc.account_status] || 'Unknown'}</option>
-            </React.Fragment>
-          ));
-        })()}
-      </select>
-      {selectedAcc && (
-        <span className={`flex items-center gap-1.5 text-xs font-medium flex-shrink-0 px-2 py-1 rounded-full ${isActive ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-success' : 'bg-danger'}`} />
-          {statusLabel}
-        </span>
+    <div className="relative" ref={ref}>
+      <p className="text-[10px] font-medium uppercase tracking-wider text-text-tertiary mb-0.5 px-3">Ad Account</p>
+      <button type="button" onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-white/60 transition-colors text-left">
+        <svg className="w-4 h-4 text-accent flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+        </svg>
+        <div className="min-w-0">
+          <p className="text-[13px] font-medium truncate">{selectedAcc?.name || 'Select account'}</p>
+          {selectedAcc && <p className="text-[10px] text-text-tertiary">{selectedAcc.id}</p>}
+        </div>
+        {selectedAcc && (
+          <span className={`flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${isActive ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-success' : 'bg-danger'}`} />
+            {statusLabel}
+          </span>
+        )}
+        <svg className={`w-3.5 h-3.5 text-text-tertiary flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-border rounded-xl shadow-lg max-h-[280px] overflow-y-auto min-w-[320px]">
+          {(() => {
+            const sorted = [...adAccounts].sort((a, b) => (a.account_status === 1 ? 0 : 1) - (b.account_status === 1 ? 0 : 1));
+            return sorted.map((acc) => {
+              const numericId = acc.id.replace('act_', '');
+              const isSel = numericId === settings.adAccountId;
+              const active = acc.account_status === 1;
+              return (
+                <button key={acc.id} type="button"
+                  onClick={() => { setSettings({ adAccountId: numericId }); setOpen(false); }}
+                  className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-left hover:bg-accent/5 transition-colors ${isSel ? 'bg-accent/5' : ''}`}>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-[13px] truncate ${isSel ? 'font-semibold text-accent' : 'font-medium'}`}>{acc.name}</p>
+                    <p className="text-[10px] text-text-tertiary">{acc.id}</p>
+                  </div>
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
+                    {STATUS_LABELS[acc.account_status] || 'Unknown'}
+                  </span>
+                  {isSel && (
+                    <svg className="w-4 h-4 text-accent flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </button>
+              );
+            });
+          })()}
+        </div>
       )}
     </div>
   );
 }
 
 export default function Upload() {
-  const { settings, setSettings, isConfigured, addToast, addHistory, addCreatives } = useApp();
+  const { settings, setSettings, isConfigured, addToast, addHistory, addCreatives, billingStatus, prefetchedPages, prefetchedAdAccounts, prefetchedPixels } = useApp();
+  const { session } = useAuth();
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const saved = useRef(loadForm());
+  const defaults = settings.uploadDefaults || {};
+  const hidden = settings.hiddenFields || {};
+
+  // Check admin status
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+    fetch('/api/admin/me', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? setIsAdmin(true) : setIsAdmin(false))
+      .catch(() => setIsAdmin(false));
+  }, [session?.access_token]);
   const s = saved.current;
 
   // ---- Prevent accidental file drops outside DropZone (causes page reload) ----
@@ -222,11 +383,11 @@ export default function Upload() {
   const [selectedCampaign, setSelectedCampaign] = useState(s.selectedCampaign || '');
   const [apiAdSets, setApiAdSets] = useState([]);
 
-  // Campaign fields
+  // Campaign fields (sessionStorage > uploadDefaults > hardcoded fallback)
   const [campaignName, setCampaignName] = useState(s.campaignName || '');
-  const [objective, setObjective] = useState(s.objective || 'OUTCOME_TRAFFIC');
-  const [budgetType, setBudgetType] = useState(s.budgetType || 'ABO');
-  const [bidStrategy, setBidStrategy] = useState(s.bidStrategy || 'LOWEST_COST_WITHOUT_CAP');
+  const [objective, setObjective] = useState(s.objective || defaults.objective || 'OUTCOME_TRAFFIC');
+  const [budgetType, setBudgetType] = useState(s.budgetType || defaults.budgetType || 'ABO');
+  const [bidStrategy, setBidStrategy] = useState(s.bidStrategy || defaults.bidStrategy || 'LOWEST_COST_WITHOUT_CAP');
   const [budgetSharing, setBudgetSharing] = useState(s.budgetSharing ?? false);
 
   // Multi-AdSet state
@@ -242,21 +403,34 @@ export default function Upload() {
     if (s.adSetName !== undefined) {
       // Old flat format — migrate to single-element array
       return [makeDefaultAdSet({
-        name: s.adSetName || '', dailyBudget: s.dailyBudget || '20',
-        optimizationGoal: s.optimizationGoal || 'LINK_CLICKS',
-        countries: Array.isArray(s.countries) ? s.countries : ['IT'],
+        name: s.adSetName || '', dailyBudget: s.dailyBudget || defaults.dailyBudget || '20',
+        optimizationGoal: s.optimizationGoal || defaults.optimizationGoal || 'LINK_CLICKS',
+        countries: Array.isArray(s.countries) ? s.countries : (defaults.countries || ['IT']),
         excludedCountries: Array.isArray(s.excludedCountries) ? s.excludedCountries : [],
         excludedRegions: Array.isArray(s.excludedRegions) ? s.excludedRegions : [],
         showExclusions: s.showExclusions || false,
-        ageMin: s.ageMin || '18', ageMax: s.ageMax || '65', gender: s.gender || 'all',
+        ageMin: s.ageMin || defaults.ageMin || '18', ageMax: s.ageMax || defaults.ageMax || '65',
+        gender: s.gender || defaults.gender || 'all',
         startDate: s.startDate || '', selectedPixel: s.selectedPixel || '',
-        conversionEvent: s.conversionEvent || 'PURCHASE',
-        bidAmount: s.bidAmount || '', attributionSetting: s.attributionSetting || '7d_click_1d_view',
+        conversionEvent: s.conversionEvent || defaults.conversionEvent || 'PURCHASE',
+        bidAmount: s.bidAmount || '', attributionSetting: s.attributionSetting || defaults.attributionSetting || '7d_click_1d_view',
         dailyMinSpend: s.dailyMinSpend || '', dailySpendCap: s.dailySpendCap || '',
         dsaBeneficiary: s.dsaBeneficiary || '', dsaPayor: s.dsaPayor || '',
       })];
     }
-    return [makeDefaultAdSet()];
+    // Apply uploadDefaults to new ad sets
+    return [makeDefaultAdSet({
+      dailyBudget: defaults.dailyBudget || '20',
+      optimizationGoal: defaults.optimizationGoal || 'LINK_CLICKS',
+      countries: defaults.countries || ['IT'],
+      ageMin: defaults.ageMin || '18',
+      ageMax: defaults.ageMax || '65',
+      gender: defaults.gender || 'all',
+      conversionEvent: defaults.conversionEvent || 'PURCHASE',
+      attributionSetting: defaults.attributionSetting || '7d_click_1d_view',
+      dsaBeneficiary: settings.dsaBeneficiary || '',
+      dsaPayor: settings.dsaPayor || '',
+    })];
   });
 
   // Pixel list (used by AdSetCard)
@@ -268,8 +442,22 @@ export default function Upload() {
   }, []);
 
   const addAdSet = useCallback((overrides = {}) => {
-    setAdSetsState((prev) => [...prev, makeDefaultAdSet(overrides)]);
-  }, []);
+    const d = settings.uploadDefaults || {};
+    setAdSetsState((prev) => [...prev, makeDefaultAdSet({
+      dailyBudget: d.dailyBudget || '20',
+      optimizationGoal: d.optimizationGoal || 'LINK_CLICKS',
+      countries: d.countries || ['IT'],
+      ageMin: d.ageMin || '18',
+      ageMax: d.ageMax || '65',
+      gender: d.gender || 'all',
+      conversionEvent: d.conversionEvent || 'PURCHASE',
+      attributionSetting: d.attributionSetting || '7d_click_1d_view',
+      selectedPixel: settings.pixelId || '',
+      dsaBeneficiary: settings.dsaBeneficiary || '',
+      dsaPayor: settings.dsaPayor || '',
+      ...overrides,
+    })]);
+  }, [settings.pixelId, settings.uploadDefaults, settings.dsaBeneficiary, settings.dsaPayor]);
 
   const duplicateAdSet = useCallback((id) => {
     setAdSetsState((prev) => {
@@ -332,21 +520,50 @@ export default function Upload() {
 
   // Page & IG (loaded from API + manual fallback)
   const [pages, setPages] = useState([]);
-  const [selectedPage, setSelectedPage] = useState(s.selectedPage || '');
+  const [selectedPage, setSelectedPage] = useState(s.selectedPage || settings.facebookPageId || '');
   const [igAccounts, setIgAccounts] = useState([]);
-  const [selectedIgAccount, setSelectedIgAccount] = useState(s.selectedIgAccount || '');
+  const [selectedIgAccount, setSelectedIgAccount] = useState(s.selectedIgAccount || settings.instagramAccountId || '');
 
   // Website URL
-  const [websiteUrl, setWebsiteUrl] = useState(s.websiteUrl || '');
+  const [websiteUrl, setWebsiteUrl] = useState(s.websiteUrl || defaults.websiteUrl || settings.websiteUrl || '');
 
   // Global ad copy
   const [globalCopy, setGlobalCopy] = useState(s.globalCopy || {
-    primaryText: '', headline: '', description: '', cta: 'LEARN_MORE',
+    primaryText: '', headline: '', description: '', cta: defaults.cta || 'LEARN_MORE',
   });
 
-  // Creatives (file objects can't be saved to sessionStorage)
-  const [files, setFiles] = useState([]);
-  const [selectedCreativeIds, setSelectedCreativeIds] = useState(new Set());
+  // Creatives — restored from module-level cache (File objects can't be serialized)
+  const [files, setFilesRaw] = useState(_cachedFiles);
+  const setFiles = useCallback((updater) => {
+    setFilesRaw((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      _cachedFiles = next;
+      return next;
+    });
+  }, []);
+  const [selectedCreativeIds, setSelectedCreativeIdsRaw] = useState(_cachedSelectedIds);
+  const setSelectedCreativeIds = useCallback((updater) => {
+    setSelectedCreativeIdsRaw((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      _cachedSelectedIds = next;
+      return next;
+    });
+  }, []);
+  const [selectedUploadAdSets, setSelectedUploadAdSetsRaw] = useState(_cachedSelectedUploadAdSets);
+  const setSelectedUploadAdSets = useCallback((val) => {
+    _cachedSelectedUploadAdSets = val;
+    setSelectedUploadAdSetsRaw(val);
+  }, []);
+  const [viewMode, setViewModeRaw] = useState(_cachedViewMode);
+  const setViewMode = useCallback((val) => {
+    _cachedViewMode = val;
+    setViewModeRaw(val);
+  }, []);
+
+  // Ad set selection (for bulk delete)
+  const [selectedAdSetIds, setSelectedAdSetIds] = useState(new Set());
+  // Creative filter by ad set (null = show all)
+  const [filterAdSetId, setFilterAdSetId] = useState(null);
 
   // Bulk assignment: assign selected creatives to adsets
   const handleBulkAssign = useCallback((newAdSetIds) => {
@@ -373,10 +590,49 @@ export default function Upload() {
     setSelectedCreativeIds(new Set());
   }, []);
 
+  const deleteSelectedCreatives = useCallback(() => {
+    setFiles((prev) => prev.filter((f) => !selectedCreativeIds.has(f.id)));
+    setSelectedCreativeIds(new Set());
+  }, [selectedCreativeIds]);
+
+  const toggleAdSetSelection = useCallback((id) => {
+    setSelectedAdSetIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const deleteSelectedAdSets = useCallback(() => {
+    if (selectedAdSetIds.size === 0) return;
+    setAdSetsState((prev) => {
+      const remaining = prev.filter((as) => !selectedAdSetIds.has(as._id));
+      return remaining.length > 0 ? remaining : [makeDefaultAdSet()];
+    });
+    // Clean up creative assignments
+    setFiles((prev) => prev.map((f) => {
+      if (!f.adSetIds || f.adSetIds.includes('__all__')) return f;
+      const cleaned = f.adSetIds.filter((id) => !selectedAdSetIds.has(id));
+      return { ...f, adSetIds: cleaned.length > 0 ? cleaned : ['__all__'] };
+    }));
+    setSelectedAdSetIds(new Set());
+    setFilterAdSetId(null);
+  }, [selectedAdSetIds]);
+
+  const applyGlobalCopyToAll = useCallback(() => {
+    setFiles((prev) => prev.map((f) => ({ ...f, useCustomCopy: false, primaryText: '', headline: '', description: '', linkUrl: '', cta: 'LEARN_MORE' })));
+  }, []);
+
+  const handleFilterByAdSet = useCallback((adSetId) => {
+    setFilterAdSetId((prev) => prev === adSetId ? null : adSetId);
+  }, []);
+
+  const customCopyCount = files.filter((f) => f.useCustomCopy).length;
+
   // Launch
   const [showLaunchModal, setShowLaunchModal] = useState(false);
   const [bgLaunches, setBgLaunches] = useState([]);
-  const [adStatus, setAdStatus] = useState(s.adStatus || 'PAUSED');
+  const [adStatus, setAdStatus] = useState(s.adStatus || defaults.adStatus || 'PAUSED');
   const [previewIndex, setPreviewIndex] = useState(0);
   const [showLog, setShowLog] = useState(false);
   const [logEntries, setLogEntries] = useState([]);
@@ -423,31 +679,16 @@ export default function Upload() {
   }, [mode, creativeType, campaignName, objective, budgetType, bidStrategy, budgetSharing,
     adSetsState, selectedPage, selectedIgAccount, websiteUrl, globalCopy, adStatus, selectedCampaign]);
 
-  // ---- API: Load ad accounts ----
-  const [adAccounts, setAdAccounts] = useState([]);
-  useEffect(() => {
-    if (!settings.accessToken) { setAdAccounts([]); return; }
-    api.getAdAccounts(settings.accessToken)
-      .then(setAdAccounts)
-      .catch(() => setAdAccounts([]));
-  }, [settings.accessToken]);
+  // Ad accounts from pre-fetched context
+  const adAccounts = prefetchedAdAccounts;
 
-  // ---- API: Load pages ----
+  // ---- Pages from pre-fetched context ----
   useEffect(() => {
-    if (!settings.accessToken) return;
-    let cancelled = false;
-    api.getPages(settings.accessToken, settings.adAccountId)
-      .then((data) => {
-        if (cancelled) return;
-        setPages(data);
-        // Auto-select first page only if none selected or current not in new list
-        if (data.length > 0) {
-          setSelectedPage((prev) => (!prev || !data.some((p) => p.id === prev)) ? data[0].id : prev);
-        }
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [settings.accessToken, settings.adAccountId]);
+    setPages(prefetchedPages);
+    if (prefetchedPages.length > 0) {
+      setSelectedPage((prev) => (!prev || !prefetchedPages.some((p) => p.id === prev)) ? prefetchedPages[0].id : prev);
+    }
+  }, [prefetchedPages]);
 
   // ---- API: Load IG accounts ----
   useEffect(() => {
@@ -471,21 +712,15 @@ export default function Upload() {
       .catch(() => { setIgAccounts([]); setSelectedIgAccount(''); });
   }, [settings.accessToken, settings.adAccountId, selectedPage, pages]);
 
-  // ---- API: Load pixels ----
+  // ---- Pixels from pre-fetched context ----
   useEffect(() => {
-    if (!isConfigured) return;
-    api.getPixels(settings.accessToken, settings.adAccountId)
-      .then((data) => {
-        setPixels(data);
-        // Pre-fill pixel on adsets that don't have one yet
-        if (data.length > 0) {
-          setAdSetsState((prev) => prev.map((as) =>
-            as.selectedPixel ? as : { ...as, selectedPixel: data[0].id }
-          ));
-        }
-      })
-      .catch(() => {});
-  }, [isConfigured, settings.accessToken, settings.adAccountId]);
+    setPixels(prefetchedPixels);
+    if (prefetchedPixels.length > 0) {
+      setAdSetsState((prev) => prev.map((as) =>
+        as.selectedPixel ? as : { ...as, selectedPixel: prefetchedPixels[0].id }
+      ));
+    }
+  }, [prefetchedPixels]);
 
   // ---- API: Load existing campaigns ----
   useEffect(() => {
@@ -509,37 +744,32 @@ export default function Upload() {
     ? !!(selectedCampaignObj?.daily_budget || selectedCampaignObj?.lifetime_budget)
     : budgetType === 'CBO';
 
-  // ---- Auto-add existing ad sets when campaign is selected ----
+  // ---- Pre-fill new ad set values from existing campaign ----
   useEffect(() => {
     if (!apiAdSets.length || mode !== 'existing') return;
     const ref = apiAdSets.find((a) => a.status === 'ACTIVE') || apiAdSets[0];
     setAdSetsState((prev) => {
-      // If we already have existing adsets from this campaign, skip
-      if (prev.some((as) => as._type === 'existing')) return prev;
-      // Auto-add all existing adsets + keep one new adset pre-filled
-      const existingEntries = apiAdSets.map((apiAs) => makeDefaultAdSet({
-        _type: 'existing',
-        existingId: apiAs.id,
-        name: apiAs.name,
-      }));
-      // Pre-fill the first "new" adset with values from existing
+      // Only pre-fill values on the first ad set, don't add existing ad sets
+      if (prev.some((as) => as._prefilled)) return prev;
       const firstNew = prev[0] || makeDefaultAdSet();
       const prefilledNew = {
         ...firstNew,
+        _prefilled: true,
         optimizationGoal: ref.optimization_goal || firstNew.optimizationGoal,
         selectedPixel: ref.promoted_object?.pixel_id || firstNew.selectedPixel,
         conversionEvent: ref.promoted_object?.custom_event_type || firstNew.conversionEvent,
       };
-      return [...existingEntries, prefilledNew, ...prev.slice(1)];
+      return [prefilledNew, ...prev.slice(1)];
     });
   }, [apiAdSets, mode]);
 
   // ---- Handlers ----
-  const handleFilesSelected = useCallback((newFiles) => {
+  const handleFilesSelected = useCallback((newFiles, targetAdSetIds) => {
+    const adSetIds = targetAdSetIds || selectedUploadAdSets || ['__all__'];
     const creatives = newFiles.map((file) => ({
       id: nextId++,
       file,
-      adSetIds: ['__all__'],
+      adSetIds,
       useCustomCopy: false,
       primaryText: '',
       headline: '',
@@ -548,6 +778,58 @@ export default function Upload() {
       cta: 'LEARN_MORE',
     }));
     setFiles((prev) => [...prev, ...creatives]);
+  }, [selectedUploadAdSets]);
+
+  const handleUploadForAdSet = useCallback((adSetId, fileList) => {
+    const newFiles = Array.from(fileList);
+    handleFilesSelected(newFiles, [adSetId]);
+  }, [handleFilesSelected]);
+
+  const handleFolderForAdSet = useCallback((adSetId, fileList, folderName) => {
+    // All files from the folder go to this specific ad set
+    const newFiles = Array.from(fileList);
+    handleFilesSelected(newFiles, [adSetId]);
+    // Rename the ad set to the folder name
+    if (folderName) {
+      updateAdSet(adSetId, 'name', folderName);
+    }
+  }, [handleFilesSelected, updateAdSet]);
+
+  // Folder upload: each folder becomes an ad set, creatives assigned to it
+  const handleFolderSelected = useCallback((folderEntries) => {
+    // folderEntries = [['FolderName', [File, File, ...]], ...]
+    const newAdSets = [];
+    const newCreatives = [];
+
+    for (const [folderName, folderFiles] of folderEntries) {
+      // Create a new ad set for this folder (or reuse if name matches)
+      const adSetId = `as_${nextAdSetId++}`;
+      newAdSets.push(makeDefaultAdSet({
+        _id: adSetId,
+        name: folderName === '__root__' ? '' : folderName,
+        _collapsed: true,
+      }));
+      for (const file of folderFiles) {
+        newCreatives.push({
+          id: nextId++,
+          file,
+          adSetIds: [adSetId],
+          useCustomCopy: false,
+          primaryText: '',
+          headline: '',
+          description: '',
+          linkUrl: '',
+          cta: 'LEARN_MORE',
+        });
+      }
+    }
+
+    if (newAdSets.length > 0) {
+      setAdSetsState((prev) => [...prev, ...newAdSets]);
+    }
+    if (newCreatives.length > 0) {
+      setFiles((prev) => [...prev, ...newCreatives]);
+    }
   }, []);
 
   const handleRemove = useCallback((id) => {
@@ -623,6 +905,12 @@ export default function Upload() {
   }, [globalCopy, websiteUrl, buildUrlWithUtm]);
 
   const handleLaunch = () => {
+    // Plan limit check
+    if (billingStatus.launchLimit && billingStatus.launchesThisMonth >= billingStatus.launchLimit) {
+      setShowUpgradeModal(true);
+      return;
+    }
+
     if (mode === 'new') {
       if (!campaignName.trim()) { addToast('Enter a campaign name', 'error'); return; }
     } else {
@@ -976,6 +1264,7 @@ export default function Upload() {
 
         const firstAdSetMetaId = Object.values(adSetIdMap)[0];
         addHistory({ campaignId, adSetId: firstAdSetMetaId, campaignName: launchName, adsCount: results.length, status: snap.adStatus, results });
+        logAction('campaign.launch', { campaignId, campaignName: launchName, adsCount: results.length, adSetsCount: Object.keys(adSetIdMap).length, adAccountId: settings.adAccountId });
         addCreatives(snap.files.map((f) => ({ name: f.file.name, size: f.file.size, type: f.file.type, date: new Date().toISOString() })));
         const usedAdSets = new Set(results.map((r) => r.adSetName)).size;
         updateLaunch({ step: 'Done!', pct: 100, status: 'completed' });
@@ -989,10 +1278,13 @@ export default function Upload() {
     })();
   };
 
-  const inputCls = "w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent bg-white";
+  const inputCls = "w-full border border-border rounded-md px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent/[0.15] focus:border-accent bg-white";
+
+  // Page selector for toolbar
+  const selectedPageObj = pages.find((p) => p.id === selectedPage);
 
   return (
-    <div className="p-6">
+    <div className="px-8 py-5">
       {!isConfigured && (
         <div className="mb-4 px-4 py-3 bg-warning/10 border border-warning/20 rounded-lg flex items-center gap-3 text-sm">
           <svg className="w-5 h-5 text-warning flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1001,35 +1293,65 @@ export default function Upload() {
           <span className="text-text-secondary">API not configured — you can explore the UI, but launching requires credentials.</span>
         </div>
       )}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Upload Ad Creatives</h1>
-        <p className="text-text-secondary text-sm mt-1">Configure everything and launch in one click</p>
+
+      {/* ═══ Top Toolbar ═══ */}
+      <div className="mb-5 flex items-center gap-2 flex-wrap">
+        {/* Ad Account selector */}
+        {adAccounts.length > 0 && (
+          <AdAccountBar adAccounts={adAccounts} settings={settings} setSettings={setSettings} />
+        )}
+
+        {/* Page & IG selector */}
+        {pages.length > 0 && (
+          <PageAndIgSelector
+            pages={pages} selectedPage={selectedPage} onPageChange={setSelectedPage}
+            igAccounts={igAccounts} selectedIg={selectedIgAccount} onIgChange={setSelectedIgAccount}
+          />
+        )}
+
+        <div className="flex-1" />
+
+        {/* Ad Status toggle */}
+        <div className="flex items-center gap-1.5 bg-white/60 rounded-lg px-2.5 py-1.5 border border-border/50">
+          <span className="text-[11px] font-medium text-text-secondary">Status:</span>
+          <button type="button" onClick={() => setAdStatus(adStatus === 'PAUSED' ? 'ACTIVE' : 'PAUSED')}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${adStatus === 'ACTIVE' ? 'bg-success' : 'bg-border'}`}>
+            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${adStatus === 'ACTIVE' ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+          </button>
+          <span className={`text-[11px] font-semibold ${adStatus === 'ACTIVE' ? 'text-success' : 'text-text-secondary'}`}>
+            {adStatus === 'ACTIVE' ? 'Active' : 'Paused'}
+          </span>
+        </div>
+
+        {/* Launch button */}
+        <button
+          onClick={handleLaunch}
+          disabled={files.length === 0}
+          className="btn-glow px-5 py-2 bg-accent text-white rounded-xl text-sm font-semibold hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+        >
+          {'\uD83D\uDE80'} Launch Ads
+        </button>
       </div>
 
-      {/* Ad Account Selector */}
-      {adAccounts.length > 0 && (
-        <AdAccountBar adAccounts={adAccounts} settings={settings} setSettings={setSettings} inputCls={inputCls} />
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* ============ LEFT COLUMN ============ */}
-        <div className="space-y-5">
+        <div className="space-y-4">
 
-          {/* Mode toggle */}
-          <div className="flex gap-1 bg-bg rounded-lg p-1 w-fit">
-            <button onClick={() => setMode('new')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${mode === 'new' ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
-              New Campaign
-            </button>
-            <button onClick={() => setMode('existing')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${mode === 'existing' ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
-              Existing Campaign
-            </button>
-          </div>
-
-          {/* Campaign config */}
-          <div className="bg-white rounded-xl border border-border p-5 space-y-4">
-            <h2 className="text-sm font-semibold">Campaign</h2>
+          {/* Campaign config — with integrated mode toggle */}
+          <div className="glass-card rounded-xl p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Campaign</h2>
+              <div className="flex gap-0.5 bg-bg/80 rounded-lg p-0.5">
+                <button type="button" onClick={() => setMode('new')}
+                  className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-colors ${mode === 'new' ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
+                  New
+                </button>
+                <button type="button" onClick={() => setMode('existing')}
+                  className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-colors ${mode === 'existing' ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
+                  Existing
+                </button>
+              </div>
+            </div>
 
             {mode === 'new' ? (
               <>
@@ -1037,22 +1359,24 @@ export default function Upload() {
                   <label className="block text-xs font-medium text-text-secondary mb-1">Campaign Name</label>
                   <input type="text" value={campaignName} onChange={(e) => setCampaignName(e.target.value)} className={inputCls} placeholder="es. Summer Sale 2026" />
                 </div>
-                <Select label="Objective" value={objective} onChange={setObjective} options={CAMPAIGN_OBJECTIVES} />
+                {!hidden.objective && <Select label="Objective" value={objective} onChange={setObjective} options={CAMPAIGN_OBJECTIVES} />}
 
                 {/* CBO / ABO */}
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1.5">Budget Type</label>
-                  <div className="flex gap-1 bg-bg rounded-lg p-1">
-                    <button type="button" onClick={() => setBudgetType('ABO')}
-                      className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${budgetType === 'ABO' ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
-                      ABO (Ad Set Budget)
-                    </button>
-                    <button type="button" onClick={() => setBudgetType('CBO')}
-                      className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${budgetType === 'CBO' ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
-                      CBO (Campaign Budget)
-                    </button>
+                {!hidden.budgetType && (
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5">Budget Type</label>
+                    <div className="flex gap-1 bg-bg rounded-lg p-1">
+                      <button type="button" onClick={() => setBudgetType('ABO')}
+                        className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${budgetType === 'ABO' ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
+                        ABO (Ad Set Budget)
+                      </button>
+                      <button type="button" onClick={() => setBudgetType('CBO')}
+                        className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${budgetType === 'CBO' ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
+                        CBO (Campaign Budget)
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {budgetType === 'CBO' && (
                   <div>
@@ -1069,7 +1393,7 @@ export default function Upload() {
                 )}
 
                 {/* Budget sharing (ABO only) */}
-                {budgetType === 'ABO' && (
+                {budgetType === 'ABO' && !hidden.budgetSharing && (
                   <label className="flex items-center gap-2.5 cursor-pointer select-none">
                     <input type="checkbox" checked={budgetSharing} onChange={(e) => setBudgetSharing(e.target.checked)}
                       className="w-4 h-4 rounded border-border text-accent focus:ring-accent/30 cursor-pointer" />
@@ -1080,7 +1404,7 @@ export default function Upload() {
                   </label>
                 )}
 
-                <Select label="Bid Strategy" value={bidStrategy} onChange={setBidStrategy} options={BID_STRATEGIES} />
+                {!hidden.bidStrategy && <Select label="Bid Strategy" value={bidStrategy} onChange={setBidStrategy} options={BID_STRATEGIES} />}
 
                 {/* Bid amount / ROAS are now configured per ad set */}
               </>
@@ -1116,8 +1440,26 @@ export default function Upload() {
           <div className="space-y-3">
             {/* Toolbar */}
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-semibold">Ad Sets</span>
+              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={selectedAdSetIds.size === adSetsState.length && adSetsState.length > 0}
+                  ref={(el) => { if (el) el.indeterminate = selectedAdSetIds.size > 0 && selectedAdSetIds.size < adSetsState.length; }}
+                  onChange={() => selectedAdSetIds.size === adSetsState.length ? setSelectedAdSetIds(new Set()) : setSelectedAdSetIds(new Set(adSetsState.map((a) => a._id)))}
+                  className="w-3.5 h-3.5 rounded border-border text-accent focus:ring-accent/30 cursor-pointer"
+                />
+                <span className="text-sm font-semibold">Ad Sets</span>
+              </label>
               <span className="px-2 py-0.5 text-xs font-bold bg-accent/10 text-accent rounded-full">{adSetsState.length}</span>
+              {selectedAdSetIds.size > 0 && (
+                <button type="button" onClick={deleteSelectedAdSets}
+                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-danger/30 bg-danger/5 text-danger hover:bg-danger hover:text-white transition-all">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Delete {selectedAdSetIds.size}
+                </button>
+              )}
               <div className="flex-1" />
               {/* Quick add N copies */}
               <div className="flex items-center gap-1">
@@ -1179,137 +1521,147 @@ export default function Upload() {
                 pixels={pixels}
                 accessToken={settings.accessToken}
                 countryPresets={countryPresets}
+                hiddenFields={hidden}
                 onUpdate={updateAdSet}
                 onDuplicate={duplicateAdSet}
                 onRemove={removeAdSet}
                 isCBO={isCBO}
                 bidStrategy={bidStrategy}
+                creativeCount={files.filter((f) => {
+                  const ids = f.adSetIds || ['__all__'];
+                  return ids.includes('__all__') || ids.includes(as._id);
+                }).length}
+                onUploadForAdSet={handleUploadForAdSet}
+                onFolderForAdSet={handleFolderForAdSet}
+                isSelected={selectedAdSetIds.has(as._id)}
+                onToggleSelect={toggleAdSetSelection}
+                onFilter={handleFilterByAdSet}
+                isFiltered={filterAdSetId === as._id}
               />
             ))}
           </div>
 
-          {/* Page & Instagram Account */}
-          <div className="bg-white rounded-xl border border-border p-5 space-y-4">
-            <h2 className="text-sm font-semibold">Page & Identity</h2>
-            <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1">Facebook Page</label>
-              {pages.length > 0 ? (
-                <PagePicker pages={pages} selected={selectedPage} onChange={setSelectedPage} />
-              ) : (
-                <input type="text" value={selectedPage} onChange={(e) => setSelectedPage(e.target.value)} className={inputCls} placeholder="Page ID (es. 123456789)" />
-              )}
-              {pages.length > 0 && (
-                <details className="mt-1.5">
-                  <summary className="text-xs text-text-secondary cursor-pointer hover:text-text">Or enter Page ID manually</summary>
-                  <input type="text" value={selectedPage} onChange={(e) => setSelectedPage(e.target.value)} className={`${inputCls} mt-1`} placeholder="Page ID..." />
-                </details>
-              )}
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1">
-                Instagram Account <span className="font-normal">(optional)</span>
-              </label>
-              {igAccounts.length > 0 ? (
-                <IgAccountPicker igAccounts={igAccounts} selected={selectedIgAccount} onChange={setSelectedIgAccount} />
-              ) : (
-                <input type="text" value={selectedIgAccount} onChange={(e) => setSelectedIgAccount(e.target.value)} className={inputCls} placeholder="Instagram Account ID (optional)" />
-              )}
-              <details className="mt-1.5">
-                <summary className="text-xs text-text-secondary cursor-pointer hover:text-text">Enter Instagram ID manually</summary>
-                <input
-                  type="text"
-                  value={selectedIgAccount}
-                  onChange={(e) => setSelectedIgAccount(e.target.value)}
-                  className={`${inputCls} mt-1`}
-                  placeholder="Instagram Account ID (es. 17841400000000)"
-                />
-                <p className="text-[10px] text-text-secondary mt-1">
-                  If the account is not found automatically, you can enter the ID manually.
-                  Find it in Business Manager &gt; Instagram Accounts.
-                </p>
-              </details>
-            </div>
-          </div>
-
-          {/* Website URL */}
-          <div className="bg-white rounded-xl border border-border p-5">
-            <label className="block text-xs font-medium text-text-secondary mb-1">Website URL</label>
-            <input type="url" value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} className={inputCls} placeholder="https://example.com" />
-          </div>
-
-          {/* Global Ad Copy */}
-          <div className="bg-white rounded-xl border border-border p-5">
-            <div className="mb-3">
-              <h2 className="text-sm font-semibold">Ad Copy</h2>
-              <p className="text-xs text-text-secondary mt-0.5">Applies to all creatives. Check "Custom" on a creative to override.</p>
-            </div>
-            <div className="space-y-3">
+          {/* Website URL — inline */}
+          <div className="glass-card rounded-xl p-4 space-y-3">
+            {!hidden.websiteUrl && (
               <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1">Primary Text</label>
-                <textarea rows={5} value={globalCopy.primaryText} onChange={(e) => setGlobalCopy({ ...globalCopy, primaryText: e.target.value })} className={`${inputCls} resize-y`} placeholder="Write your ad text..." />
+                <label className="block text-xs font-medium text-text-secondary mb-1">Website URL</label>
+                <input type="url" value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} className={inputCls} placeholder="https://example.com" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1">Headline</label>
-                  <input type="text" value={globalCopy.headline} onChange={(e) => setGlobalCopy({ ...globalCopy, headline: e.target.value })} className={inputCls} placeholder="Headline..." />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1">Description</label>
-                  <input type="text" value={globalCopy.description} onChange={(e) => setGlobalCopy({ ...globalCopy, description: e.target.value })} className={inputCls} placeholder="Description..." />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1">CTA Button</label>
-                <select value={globalCopy.cta} onChange={(e) => setGlobalCopy({ ...globalCopy, cta: e.target.value })} className={inputCls}>
-                  {CTA_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Upload area */}
-          <div className="bg-white rounded-xl border border-border p-5">
-            <div className="flex items-center justify-between mb-3">
-              <label className="block text-sm font-medium">Upload Creatives</label>
-              <div className="flex gap-1 bg-bg rounded-lg p-0.5">
-                <button type="button" onClick={() => setCreativeType('single')}
-                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${creativeType === 'single' ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
-                  Single Ads
-                </button>
-                <button type="button" onClick={() => setCreativeType('carousel')}
-                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${creativeType === 'carousel' ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
-                  Carousel
-                </button>
-              </div>
-            </div>
-            {creativeType === 'carousel' && (
-              <p className="text-xs text-text-secondary mb-3">Upload 2-10 images. They'll be combined into a single carousel ad.</p>
             )}
-            <DropZone onFilesSelected={handleFilesSelected} />
+            {/* Fallback: manual Page/IG input when API doesn't load them */}
+            {pages.length === 0 && (
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1">Facebook Page ID</label>
+                <input type="text" value={selectedPage} onChange={(e) => setSelectedPage(e.target.value)} className={inputCls} placeholder="Page ID (es. 123456789)" />
+              </div>
+            )}
+            {igAccounts.length === 0 && (
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1">Instagram Account ID <span className="font-normal text-text-tertiary">(optional)</span></label>
+                <input type="text" value={selectedIgAccount} onChange={(e) => setSelectedIgAccount(e.target.value)} className={inputCls} placeholder="IG Account ID (optional)" />
+              </div>
+            )}
           </div>
+
         </div>
 
         {/* ============ RIGHT COLUMN ============ */}
-        <div className="space-y-5">
+        <div className="space-y-4">
 
-            {/* Creative list + launch button */}
-            <div className="bg-white rounded-xl border border-border p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold">
-                  {creativeType === 'carousel'
-                    ? `Carousel — ${files.length} card${files.length !== 1 ? 's' : ''}`
-                    : `${files.length} creative${files.length !== 1 ? 's' : ''}`}
-                </h2>
-                <button
-                  onClick={handleLaunch}
-                  disabled={files.length === 0}
-                  className="px-5 py-2 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-                >
-                  {'\uD83D\uDE80'} Launch Ads
+          {/* Global Ad Copy */}
+          <div className="glass-card rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="text-sm font-semibold">Ad Copy</h2>
+                <p className="text-[11px] text-text-tertiary mt-0.5">Applies to all creatives</p>
+              </div>
+              {customCopyCount > 0 && (
+                <button type="button" onClick={applyGlobalCopyToAll}
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-lg border border-accent/30 bg-accent/5 text-accent hover:bg-accent hover:text-white transition-all">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Reset ({customCopyCount})
                 </button>
+              )}
+            </div>
+            <div className="space-y-3">
+              {!hidden.primaryText && (
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Primary Text</label>
+                  <textarea rows={3} value={globalCopy.primaryText} onChange={(e) => setGlobalCopy({ ...globalCopy, primaryText: e.target.value })} className={`${inputCls} resize-y`} placeholder="Write your ad text..." />
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                {!hidden.headline && (
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1">Headline</label>
+                    <input type="text" value={globalCopy.headline} onChange={(e) => setGlobalCopy({ ...globalCopy, headline: e.target.value })} className={inputCls} placeholder="Headline..." />
+                  </div>
+                )}
+                {!hidden.description && (
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1">Description</label>
+                    <input type="text" value={globalCopy.description} onChange={(e) => setGlobalCopy({ ...globalCopy, description: e.target.value })} className={inputCls} placeholder="Description..." />
+                  </div>
+                )}
+              </div>
+              {!hidden.cta && (
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">CTA Button</label>
+                  <select value={globalCopy.cta} onChange={(e) => setGlobalCopy({ ...globalCopy, cta: e.target.value })} className={inputCls}>
+                    {CTA_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Creatives — unified area */}
+          <div className="glass-card rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold">
+                    {creativeType === 'carousel'
+                      ? `Carousel — ${files.length} card${files.length !== 1 ? 's' : ''}`
+                      : `${files.length} creative${files.length !== 1 ? 's' : ''}`}
+                  </h2>
+                  {!hidden.creativeType && (
+                    <div className="flex gap-0.5 bg-bg/80 rounded-lg p-0.5">
+                      <button type="button" onClick={() => setCreativeType('single')}
+                        className={`px-2.5 py-0.5 rounded-md text-[11px] font-semibold transition-colors ${creativeType === 'single' ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
+                        Single
+                      </button>
+                      <button type="button" onClick={() => setCreativeType('carousel')}
+                        className={`px-2.5 py-0.5 rounded-md text-[11px] font-semibold transition-colors ${creativeType === 'carousel' ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
+                        Carousel
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {/* View mode toggle */}
+                  {files.length > 0 && creativeType === 'single' && (
+                    <div className="flex gap-0.5 bg-bg rounded-lg p-0.5">
+                      {[
+                        { key: 'list', icon: <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg> },
+                        { key: '3', label: '3' },
+                        { key: '4', label: '4' },
+                        { key: '5', label: '5' },
+                      ].map(({ key, icon, label }) => (
+                        <button key={key} type="button" onClick={() => setViewMode(key)}
+                          className={`w-7 h-7 flex items-center justify-center rounded-md text-xs font-bold transition-colors ${viewMode === key ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}
+                          title={key === 'list' ? 'List view' : `${key} columns`}>
+                          {icon || label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {files.length > 0 && creativeType === 'single' && (
+              {files.length > 0 && creativeType === 'single' && viewMode === 'list' && (
                 <div className="mb-3 px-3 py-2 bg-accent/5 rounded-lg text-xs text-text-secondary">
                   Use <span className="font-medium text-text">Custom</span> for different copy on each creative.
                 </div>
@@ -1320,8 +1672,8 @@ export default function Upload() {
                 </div>
               )}
 
-              {/* Bulk assign toolbar — visible when 2+ adsets and single mode */}
-              {files.length > 0 && adSetsState.length > 1 && creativeType === 'single' && (
+              {/* Selection toolbar — select all, bulk delete, bulk assign */}
+              {files.length > 0 && creativeType === 'single' && (
                 <div className="mb-3 flex items-center gap-2 flex-wrap px-1">
                   <label className="flex items-center gap-1.5 cursor-pointer select-none">
                     <input
@@ -1338,144 +1690,210 @@ export default function Upload() {
 
                   {selectedCreativeIds.size > 0 && (
                     <>
-                      <span className="text-xs text-text-secondary">→</span>
-                      <span className="text-xs font-medium text-text-secondary">Assign to:</span>
-                      {adSetsState.map((as) => {
-                        // Check if all selected creatives are assigned to this adset
-                        const selectedFiles = files.filter((f) => selectedCreativeIds.has(f.id));
-                        const allAssigned = selectedFiles.every((f) => {
-                          const ids = f.adSetIds || ['__all__'];
-                          return ids.includes('__all__') || ids.includes(as._id);
-                        });
-                        const noneAssigned = selectedFiles.every((f) => {
-                          const ids = f.adSetIds || ['__all__'];
-                          return !ids.includes('__all__') && !ids.includes(as._id);
-                        });
-                        return (
-                          <button
-                            key={as._id}
-                            type="button"
-                            onClick={() => {
-                              setFiles((prev) => prev.map((f) => {
-                                if (!selectedCreativeIds.has(f.id)) return f;
-                                const ids = f.adSetIds || ['__all__'];
-                                if (allAssigned) {
-                                  // Remove this adset (but if was __all__, switch to all-except-this)
-                                  if (ids.includes('__all__')) {
-                                    const allOther = adSetsState.filter((a) => a._id !== as._id).map((a) => a._id);
-                                    return { ...f, adSetIds: allOther.length > 0 ? allOther : ['__all__'] };
-                                  }
-                                  const without = ids.filter((id) => id !== as._id);
-                                  return { ...f, adSetIds: without.length > 0 ? without : ['__all__'] };
-                                } else {
-                                  // Add this adset
-                                  if (ids.includes('__all__')) return f; // already included
-                                  const with_ = [...ids, as._id];
-                                  if (with_.length >= adSetsState.length) return { ...f, adSetIds: ['__all__'] };
-                                  return { ...f, adSetIds: with_ };
-                                }
-                              }));
-                            }}
-                            className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border transition-all ${
-                              allAssigned
-                                ? 'border-accent bg-accent/10 text-accent'
-                                : noneAssigned
-                                  ? 'border-border bg-white text-text-secondary hover:border-accent hover:text-accent'
-                                  : 'border-accent/40 bg-accent/5 text-accent/70'
-                            }`}
-                          >
-                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: as._color }} />
-                            {as.name || '(unnamed)'}
-                          </button>
-                        );
-                      })}
+                      {/* Bulk delete */}
                       <button
                         type="button"
-                        onClick={() => handleBulkAssign(['__all__'])}
-                        className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-all ${
-                          files.filter((f) => selectedCreativeIds.has(f.id)).every((f) => (f.adSetIds || ['__all__']).includes('__all__'))
-                            ? 'border-accent bg-accent/10 text-accent'
-                            : 'border-border bg-white text-text-secondary hover:border-accent hover:text-accent'
-                        }`}
+                        onClick={deleteSelectedCreatives}
+                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-danger/30 bg-danger/5 text-danger hover:bg-danger hover:text-white transition-all"
                       >
-                        All
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        Delete {selectedCreativeIds.size}
                       </button>
+
+                      {/* Bulk assign — only when 2+ adsets */}
+                      {adSetsState.length > 1 && (
+                        <>
+                          <span className="text-xs text-text-secondary ml-1">|</span>
+                          <span className="text-xs font-medium text-text-secondary">Assign:</span>
+                          {adSetsState.map((as) => {
+                            const selectedFiles = files.filter((f) => selectedCreativeIds.has(f.id));
+                            const allAssigned = selectedFiles.every((f) => {
+                              const ids = f.adSetIds || ['__all__'];
+                              return ids.includes('__all__') || ids.includes(as._id);
+                            });
+                            const noneAssigned = selectedFiles.every((f) => {
+                              const ids = f.adSetIds || ['__all__'];
+                              return !ids.includes('__all__') && !ids.includes(as._id);
+                            });
+                            return (
+                              <button
+                                key={as._id}
+                                type="button"
+                                onClick={() => {
+                                  setFiles((prev) => prev.map((f) => {
+                                    if (!selectedCreativeIds.has(f.id)) return f;
+                                    const ids = f.adSetIds || ['__all__'];
+                                    if (allAssigned) {
+                                      if (ids.includes('__all__')) {
+                                        const allOther = adSetsState.filter((a) => a._id !== as._id).map((a) => a._id);
+                                        return { ...f, adSetIds: allOther.length > 0 ? allOther : ['__all__'] };
+                                      }
+                                      const without = ids.filter((id) => id !== as._id);
+                                      return { ...f, adSetIds: without.length > 0 ? without : ['__all__'] };
+                                    } else {
+                                      if (ids.includes('__all__')) return f;
+                                      const with_ = [...ids, as._id];
+                                      if (with_.length >= adSetsState.length) return { ...f, adSetIds: ['__all__'] };
+                                      return { ...f, adSetIds: with_ };
+                                    }
+                                  }));
+                                }}
+                                className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg border transition-all ${
+                                  allAssigned
+                                    ? 'border-accent bg-accent/10 text-accent'
+                                    : noneAssigned
+                                      ? 'border-border bg-white text-text-secondary hover:border-accent hover:text-accent'
+                                      : 'border-accent/40 bg-accent/5 text-accent/70'
+                                }`}
+                              >
+                                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: as._color }} />
+                                {as.name || '(unnamed)'}
+                              </button>
+                            );
+                          })}
+                          <button
+                            type="button"
+                            onClick={() => handleBulkAssign(['__all__'])}
+                            className={`px-2 py-1 text-xs font-medium rounded-lg border transition-all ${
+                              files.filter((f) => selectedCreativeIds.has(f.id)).every((f) => (f.adSetIds || ['__all__']).includes('__all__'))
+                                ? 'border-accent bg-accent/10 text-accent'
+                                : 'border-border bg-white text-text-secondary hover:border-accent hover:text-accent'
+                            }`}
+                          >
+                            All
+                          </button>
+                        </>
+                      )}
                     </>
                   )}
                 </div>
               )}
 
-              <div className="space-y-2">
-                {files.length === 0 ? (
-                  <div className="text-center py-12 text-text-secondary text-sm">
-                    Upload creatives to see preview
+              {/* Filter indicator */}
+              {filterAdSetId && (() => {
+                const filterAs = adSetsState.find((as) => as._id === filterAdSetId);
+                return filterAs ? (
+                  <div className="mb-3 flex items-center gap-2 px-3 py-2 bg-accent/5 rounded-lg">
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: filterAs._color }} />
+                    <span className="text-xs font-medium text-accent">Showing creatives for: {filterAs.name || '(unnamed)'}</span>
+                    <button type="button" onClick={() => setFilterAdSetId(null)} className="ml-auto text-xs text-text-secondary hover:text-text font-medium">Clear filter</button>
+                  </div>
+                ) : null;
+              })()}
+
+              {/* Upload zone — always active for drag & drop */}
+              {files.length === 0 ? (
+                <DropZone
+                  onFilesSelected={handleFilesSelected}
+                  onFolderSelected={handleFolderSelected}
+                  adSets={adSetsState}
+                  selectedUploadAdSets={selectedUploadAdSets}
+                  onUploadAdSetChange={setSelectedUploadAdSets}
+                />
+              ) : (() => {
+                const displayFiles = filterAdSetId
+                  ? files.filter((f) => {
+                      const ids = f.adSetIds || ['__all__'];
+                      return ids.includes('__all__') || ids.includes(filterAdSetId);
+                    })
+                  : files;
+                return displayFiles.length === 0 ? (
+                  <div className="text-center py-8 text-text-secondary text-sm">
+                    No creatives assigned to this ad set
                   </div>
                 ) : (
-                  files.map((creative, index) => (
-                    <CreativeCard key={creative.id} creative={creative} index={index}
-                      onToggleCustom={handleToggleCustom} onUpdateField={handleUpdateField} onRemove={handleRemove}
-                      isCarousel={creativeType === 'carousel'} isFirst={index === 0} isLast={index === files.length - 1} onMove={handleMove}
-                      globalCopy={globalCopy} adSets={adSetsState}
-                      isSelected={selectedCreativeIds.has(creative.id)}
-                      onToggleSelect={adSetsState.length > 1 && creativeType === 'single' ? toggleCreativeSelection : undefined} />
-                  ))
-                )}
-              </div>
+                  <div className={
+                    viewMode === 'list' || creativeType === 'carousel'
+                      ? 'space-y-2'
+                      : `grid gap-2 ${viewMode === '3' ? 'grid-cols-3' : viewMode === '4' ? 'grid-cols-4' : 'grid-cols-5'}`
+                  }>
+                    {displayFiles.map((creative, index) => (
+                      <CreativeCard key={creative.id} creative={creative} index={index}
+                        onToggleCustom={handleToggleCustom} onUpdateField={handleUpdateField}
+                        isCarousel={creativeType === 'carousel'} isFirst={index === 0} isLast={index === displayFiles.length - 1} onMove={handleMove}
+                        globalCopy={globalCopy} adSets={adSetsState}
+                        isSelected={selectedCreativeIds.has(creative.id)}
+                        onToggleSelect={creativeType === 'single' ? toggleCreativeSelection : undefined}
+                        viewMode={creativeType === 'carousel' ? 'list' : viewMode} />
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* Add more creatives — compact dropzone when files exist */}
+              {files.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-border/50">
+                  <DropZone
+                    onFilesSelected={handleFilesSelected}
+                    onFolderSelected={handleFolderSelected}
+                    adSets={adSetsState}
+                    selectedUploadAdSets={selectedUploadAdSets}
+                    onUploadAdSetChange={setSelectedUploadAdSets}
+                    compact
+                  />
+                </div>
+              )}
             </div>
 
             {/* Ad Preview */}
-            {files.length > 0 && (
-              <div className="bg-white rounded-xl border border-border p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-sm font-semibold">Preview</h2>
-                  {/* Creative selector for single ads */}
-                  {creativeType === 'single' && files.length > 1 && (
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setPreviewIndex(Math.max(0, previewIndex - 1))}
-                        disabled={previewIndex === 0}
-                        className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-bg disabled:opacity-30 transition-colors"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                      </button>
-                      <span className="text-xs text-text-secondary font-medium min-w-[3ch] text-center">{previewIndex + 1}/{files.length}</span>
-                      <button
-                        type="button"
-                        onClick={() => setPreviewIndex(Math.min(files.length - 1, previewIndex + 1))}
-                        disabled={previewIndex >= files.length - 1}
-                        className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-bg disabled:opacity-30 transition-colors"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                      </button>
-                    </div>
-                  )}
+            {files.length > 0 && (() => {
+              const previewFiles = filterAdSetId
+                ? files.filter((f) => {
+                    const ids = f.adSetIds || ['__all__'];
+                    return ids.includes('__all__') || ids.includes(filterAdSetId);
+                  })
+                : files;
+              if (previewFiles.length === 0) return null;
+              const clampedIdx = creativeType === 'single' ? Math.min(previewIndex, previewFiles.length - 1) : 0;
+              const previewFile = previewFiles[clampedIdx];
+              return (
+                <div className="glass-card rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-sm font-semibold">Preview</h2>
+                    {creativeType === 'single' && previewFiles.length > 1 && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewIndex(Math.max(0, previewIndex - 1))}
+                          disabled={clampedIdx === 0}
+                          className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-bg disabled:opacity-30 transition-colors"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                        </button>
+                        <span className="text-xs text-text-secondary font-medium min-w-[3ch] text-center">{clampedIdx + 1}/{previewFiles.length}</span>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewIndex(Math.min(previewFiles.length - 1, previewIndex + 1))}
+                          disabled={clampedIdx >= previewFiles.length - 1}
+                          className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-bg disabled:opacity-30 transition-colors"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <AdPreview
+                    file={creativeType !== 'carousel' ? previewFile?.file : undefined}
+                    files={creativeType === 'carousel' ? previewFiles.map((f) => f.file) : undefined}
+                    isCarousel={creativeType === 'carousel'}
+                    cards={creativeType === 'carousel' ? previewFiles.map((f) => ({
+                      file: f.file,
+                      headline: (f.useCustomCopy && f.headline) ? f.headline : globalCopy.headline,
+                      description: (f.useCustomCopy && f.description) ? f.description : globalCopy.description,
+                      cta: (f.useCustomCopy && f.cta) ? f.cta : globalCopy.cta,
+                    })) : undefined}
+                    primaryText={(previewFile?.useCustomCopy && previewFile.primaryText) ? previewFile.primaryText : globalCopy.primaryText}
+                    headline={(previewFile?.useCustomCopy && previewFile.headline) ? previewFile.headline : globalCopy.headline}
+                    description={(previewFile?.useCustomCopy && previewFile.description) ? previewFile.description : globalCopy.description}
+                    cta={(previewFile?.useCustomCopy && previewFile.cta) ? previewFile.cta : globalCopy.cta}
+                    pageName={pages.find((p) => p.id === selectedPage)?.name || 'Your Page'}
+                    websiteUrl={websiteUrl}
+                  />
                 </div>
-                {(() => {
-                  const idx = creativeType === 'single' ? Math.min(previewIndex, files.length - 1) : 0;
-                  const previewFile = files[idx];
-                  return (
-                    <AdPreview
-                      file={creativeType !== 'carousel' ? previewFile?.file : undefined}
-                      files={creativeType === 'carousel' ? files.map((f) => f.file) : undefined}
-                      isCarousel={creativeType === 'carousel'}
-                      cards={creativeType === 'carousel' ? files.map((f) => ({
-                        file: f.file,
-                        headline: (f.useCustomCopy && f.headline) ? f.headline : globalCopy.headline,
-                        description: (f.useCustomCopy && f.description) ? f.description : globalCopy.description,
-                        cta: (f.useCustomCopy && f.cta) ? f.cta : globalCopy.cta,
-                      })) : undefined}
-                      primaryText={(previewFile?.useCustomCopy && previewFile.primaryText) ? previewFile.primaryText : globalCopy.primaryText}
-                      headline={(previewFile?.useCustomCopy && previewFile.headline) ? previewFile.headline : globalCopy.headline}
-                      description={(previewFile?.useCustomCopy && previewFile.description) ? previewFile.description : globalCopy.description}
-                      cta={(previewFile?.useCustomCopy && previewFile.cta) ? previewFile.cta : globalCopy.cta}
-                      pageName={pages.find((p) => p.id === selectedPage)?.name || 'Your Page'}
-                      websiteUrl={websiteUrl}
-                    />
-                  );
-                })()}
-              </div>
-            )}
+              );
+            })()}
         </div>
       </div>
 
@@ -1586,8 +2004,8 @@ export default function Upload() {
         </div>
       ))}
 
-      {/* API Log Panel */}
-      <div className="mt-6 bg-white rounded-xl border border-border overflow-hidden">
+      {/* API Log Panel — Admin only */}
+      {isAdmin && <div className="mt-6 glass-card rounded-xl overflow-hidden">
         <button
           type="button"
           onClick={() => setShowLog(!showLog)}
@@ -1644,7 +2062,27 @@ export default function Upload() {
             </div>
           </div>
         )}
-      </div>
+      </div>}
+
+      {/* Upgrade modal */}
+      <UpgradeModal
+        open={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        currentPlan={billingStatus.plan}
+        onSelectPlan={async (plan) => {
+          const { data } = await import('../lib/supabase').then(m => m.supabase.auth.getSession());
+          const tok = data?.session?.access_token;
+          if (!tok) return;
+          const res = await fetch('/api/billing/create-checkout', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plan }),
+          });
+          const result = await res.json();
+          if (result.url) window.location.href = result.url;
+          else addToast(result.error || 'Checkout failed', 'error');
+        }}
+      />
     </div>
   );
 }

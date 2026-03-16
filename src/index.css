@@ -1,17 +1,23 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #f5f6fa;
-  --color-card: #ffffff;
-  --color-accent: #3478f6;
-  --color-accent-hover: #2563eb;
-  --color-text: #1a1d26;
-  --color-text-secondary: #6b7280;
-  --color-border: #e5e7eb;
-  --color-success: #22c55e;
-  --color-danger: #ef4444;
-  --color-warning: #f59e0b;
-  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --color-bg: #FCFCFD;
+  --color-bg-secondary: #F5F5F7;
+  --color-card: #FFFFFF;
+  --color-sidebar: #F0F0F2;
+  --color-accent: #7C5CFC;
+  --color-accent-hover: #8E72FD;
+  --color-accent-muted: rgba(124,92,252,0.15);
+  --color-text: #1A1A1E;
+  --color-text-secondary: #6B6F76;
+  --color-text-tertiary: #9B9DA3;
+  --color-border: #E0E0E4;
+  --color-border-secondary: rgba(0,0,0,0.06);
+  --color-success: #3CCB7F;
+  --color-danger: #EF4444;
+  --color-warning: #F5A623;
+  --color-info: #5B93FF;
+  --font-sans: 'Inter', system-ui, sans-serif;
 }
 
 * {
@@ -21,10 +27,14 @@
 body {
   margin: 0;
   font-family: var(--font-sans);
-  background-color: var(--color-bg);
+  font-size: 13px;
+  font-weight: 500;
+  background: linear-gradient(135deg, #FCFCFD 0%, #FFFFFF 40%, #F8F5FF 100%);
+  background-attachment: fixed;
   color: var(--color-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 ::-webkit-scrollbar {
@@ -34,13 +44,14 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: #D0D0D4;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: #A0A0A4;
 }
 
+/* ── Keyframes ── */
 @keyframes slideIn {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
@@ -49,9 +60,103 @@ body {
   from { transform: translateX(0); opacity: 1; }
   to { transform: translateX(100%); opacity: 0; }
 }
+@keyframes spin-gradient {
+  from { --gradient-angle: 0deg; }
+  to { --gradient-angle: 360deg; }
+}
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(124,92,252,0.4); }
+  50% { box-shadow: 0 0 20px 4px rgba(124,92,252,0.15); }
+}
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .toast-enter {
   animation: slideIn 0.3s ease-out;
 }
 .toast-exit {
   animation: slideOut 0.3s ease-in;
+}
+
+/* ── @property for animated gradient ── */
+@property --gradient-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* ── Glassmorphism Cards ── */
+.glass-card {
+  background: rgba(255,255,255,0.70);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.50);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.03);
+  transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+.glass-card:hover {
+  background: rgba(255,255,255,0.85);
+  border-color: rgba(124,92,252,0.20);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(124,92,252,0.08);
+  transform: translateY(-1px);
+}
+
+/* ── Glassmorphism Sidebar ── */
+.glass-sidebar {
+  background: rgba(240,240,242,0.75);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-right: 1px solid rgba(255,255,255,0.60);
+}
+
+/* ── Spinning Gradient Glow Button ── */
+.btn-glow {
+  position: relative;
+  z-index: 0;
+  overflow: visible;
+}
+.btn-glow::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: conic-gradient(from var(--gradient-angle, 0deg), #7C5CFC, #6366f1, #a78bfa, #7C5CFC);
+  z-index: -1;
+  animation: spin-gradient 3s linear infinite;
+  opacity: 0.7;
+  transition: opacity 0.3s;
+}
+.btn-glow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  z-index: -1;
+}
+.btn-glow:hover::before {
+  opacity: 1;
+}
+
+/* ── Hover Glow ── */
+.hover-glow {
+  transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+.hover-glow:hover {
+  box-shadow: 0 0 0 1px rgba(124,92,252,0.08), 0 8px 24px rgba(124,92,252,0.10);
+}
+
+/* ── Smooth Accordion ── */
+.accordion-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s cubic-bezier(0.4,0,0.2,1);
+}
+.accordion-body.open {
+  grid-template-rows: 1fr;
+}
+.accordion-body > div {
+  overflow: hidden;
 }

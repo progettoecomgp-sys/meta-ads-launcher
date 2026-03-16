@@ -4,17 +4,40 @@ function getHeaders(token) {
   return { Authorization: `Bearer ${token}` };
 }
 
-function actId(accountId) {
+export function actId(accountId) {
   const id = String(accountId).replace(/^act_/, '');
   return `act_${id}`;
 }
 
-function extractError(err) {
+// Human-readable messages for common Meta API error codes
+const META_ERROR_MAP = {
+  1: 'An unknown error occurred. Please try again.',
+  2: 'Meta API is temporarily unavailable. Please try again in a few minutes.',
+  4: 'API rate limit reached. Please wait a moment and try again.',
+  17: 'Too many API calls. Please wait a few minutes before retrying.',
+  32: 'Too many API calls. Please wait a few minutes before retrying.',
+  100: 'Invalid parameter — check your campaign settings (budget, targeting, or URLs).',
+  190: 'Your access token has expired or is invalid. Please reconnect your Facebook account.',
+  200: 'Permission denied. Make sure your Facebook account has access to this ad account.',
+  294: 'Your ad account has been disabled by Meta. Check Meta Business Manager.',
+  368: 'Temporarily blocked due to policy violations. Check your Meta account.',
+  1487390: 'Ad image or video failed validation. Check file format and size.',
+  2446079: 'This ad violates Meta advertising policies. Review your ad content.',
+  2615005: 'Budget is too low. Meta requires a minimum daily budget for your targeting.',
+};
+
+export function extractError(err) {
   if (!err?.error) return 'Unknown error';
   const e = err.error;
+  // Prefer user-facing message from Meta
   if (e.error_user_msg) return e.error_user_msg;
+  // Map known error codes/subcodes to friendly messages
+  const code = e.code;
+  const subcode = e.error_subcode;
+  if (subcode && META_ERROR_MAP[subcode]) return META_ERROR_MAP[subcode];
+  if (code && META_ERROR_MAP[code]) return META_ERROR_MAP[code];
   if (e.message) return e.message;
-  return `Error ${e.code || ''}`;
+  return `Error ${code || ''}`;
 }
 
 // ---- In-app error/API log ----
@@ -740,6 +763,19 @@ export async function getAdCreatives(token, accountId) {
   );
   const data = await res.json();
   return data.data || [];
+}
+
+// Get ad statuses (effective + configured) for a batch of ad IDs
+export async function getAdStatuses(token, adIds) {
+  if (!adIds || adIds.length === 0) return {};
+  const ids = adIds.join(',');
+  const res = await apiFetch(
+    `${META_API_BASE}/?ids=${encodeURIComponent(ids)}&fields=effective_status,configured_status`,
+    { headers: getHeaders(token) },
+    'getAdStatuses'
+  );
+  const data = await res.json();
+  return data || {};
 }
 
 // Search regions for geo targeting

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
+import { getAdAccounts, getPages, getPixels } from '../utils/metaApi';
 
 const AppContext = createContext(null);
 
@@ -14,6 +15,34 @@ const DEFAULT_SETTINGS = {
   adAccountId: '',
   utmTemplate: '',
   enhancements: { image: {}, video: {}, carousel: {} },
+  facebookPageId: '',
+  facebookPageName: '',
+  instagramAccountId: '',
+  instagramAccountName: '',
+  pixelId: '',
+  pixelName: '',
+  websiteUrl: '',
+  euAdvertising: false,
+  onboardingCompleted: false,
+  facebookUserName: '',
+  tokenExpiresAt: null,
+  hiddenFields: {},
+  uploadDefaults: {
+    objective: 'OUTCOME_TRAFFIC',
+    budgetType: 'ABO',
+    bidStrategy: 'LOWEST_COST_WITHOUT_CAP',
+    adStatus: 'PAUSED',
+    dailyBudget: '20',
+    optimizationGoal: 'LINK_CLICKS',
+    countries: ['IT'],
+    ageMin: '18',
+    ageMax: '65',
+    gender: 'all',
+    cta: 'LEARN_MORE',
+    websiteUrl: '',
+    attributionSetting: '7d_click_1d_view',
+    conversionEvent: 'PURCHASE',
+  },
 };
 
 function loadFromStorage(key, fallback) {
@@ -34,6 +63,17 @@ export function AppProvider({ children }) {
   const [toasts, setToasts] = useState([]);
   const [dataLoading, setDataLoading] = useState(true);
   const migrated = useRef(false);
+
+  // Pre-fetched Meta API data (pages, ad accounts, pixels)
+  const [prefetchedPages, setPrefetchedPages] = useState([]);
+  const [prefetchedAdAccounts, setPrefetchedAdAccounts] = useState([]);
+  const [prefetchedPixels, setPrefetchedPixels] = useState([]);
+
+  // Impersonation state
+  const [impersonatedUser, setImpersonatedUser] = useState(null);
+
+  // Billing / plan state
+  const [billingStatus, setBillingStatus] = useState({ plan: 'free', launchesThisMonth: 0, launchLimit: 3, hasStripe: false });
 
   // Load data from Supabase on mount
   useEffect(() => {
@@ -64,6 +104,7 @@ export function AppProvider({ children }) {
             ad_account_id: '',
             utm_template: '',
             enhancements: DEFAULT_SETTINGS.enhancements,
+            onboarding_completed: false,
           }, { onConflict: 'user_id' }).select().single();
           dbSettings = newRow;
         }
@@ -135,11 +176,34 @@ export function AppProvider({ children }) {
 
         // Map DB data to app state
         if (dbSettings) {
+          // Auto-complete onboarding only for legacy users who manually configured token + ad account
+          const hasToken = !!dbSettings.access_token;
+          const hasAdAccount = !!dbSettings.ad_account_id;
+          const onboardingDone = dbSettings.onboarding_completed || (hasToken && hasAdAccount);
+
+          // If legacy user with token+adAccount but onboarding not flagged, mark it
+          if (hasToken && hasAdAccount && !dbSettings.onboarding_completed) {
+            supabase.from('user_settings').update({ onboarding_completed: true }).eq('user_id', user.id).then(() => {});
+          }
+
           setSettingsState({
             accessToken: dbSettings.access_token || '',
             adAccountId: dbSettings.ad_account_id || '',
             utmTemplate: dbSettings.utm_template || '',
             enhancements: dbSettings.enhancements || DEFAULT_SETTINGS.enhancements,
+            facebookPageId: dbSettings.facebook_page_id || '',
+            facebookPageName: dbSettings.facebook_page_name || '',
+            instagramAccountId: dbSettings.instagram_account_id || '',
+            instagramAccountName: dbSettings.instagram_account_name || '',
+            pixelId: dbSettings.pixel_id || '',
+            pixelName: dbSettings.pixel_name || '',
+            websiteUrl: dbSettings.website_url || '',
+            euAdvertising: dbSettings.eu_advertising || false,
+            onboardingCompleted: onboardingDone,
+            facebookUserName: dbSettings.facebook_user_name || '',
+            tokenExpiresAt: dbSettings.token_expires_at || null,
+            hiddenFields: dbSettings.hidden_fields || {},
+            uploadDefaults: dbSettings.upload_defaults || DEFAULT_SETTINGS.uploadDefaults,
           });
           setConnectionStatusState(dbSettings.connection_status || null);
         }
@@ -172,6 +236,79 @@ export function AppProvider({ children }) {
     return () => { cancelled = true; };
   }, [user]);
 
+  // Load billing status
+  useEffect(() => {
+    if (!user) return;
+    supabase.auth.getSession().then(({ data }) => {
+      const token = data?.session?.access_token;
+      if (!token) return;
+      fetch('/api/billing/status', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then(result => { if (result) setBillingStatus(result); })
+        .catch(() => {});
+    });
+  }, [user]);
+
+  // Pre-fetch ad accounts when token is available
+  useEffect(() => {
+    if (!settings.accessToken) { setPrefetchedAdAccounts([]); return; }
+    getAdAccounts(settings.accessToken)
+      .then(setPrefetchedAdAccounts)
+      .catch(() => setPrefetchedAdAccounts([]));
+  }, [settings.accessToken]);
+
+  // Pre-fetch pages when token + ad account are available
+  useEffect(() => {
+    if (!settings.accessToken) { setPrefetchedPages([]); return; }
+    let cancelled = false;
+    getPages(settings.accessToken, settings.adAccountId)
+      .then((data) => { if (!cancelled) setPrefetchedPages(data); })
+      .catch(() => { if (!cancelled) setPrefetchedPages([]); });
+    return () => { cancelled = true; };
+  }, [settings.accessToken, settings.adAccountId]);
+
+  // Pre-fetch pixels when token + ad account are available
+  useEffect(() => {
+    if (!settings.accessToken || !settings.adAccountId) { setPrefetchedPixels([]); return; }
+    getPixels(settings.accessToken, settings.adAccountId)
+      .then(setPrefetchedPixels)
+      .catch(() => setPrefetchedPixels([]));
+  }, [settings.accessToken, settings.adAccountId]);
+
+  // Impersonation helpers
+  const startImpersonation = useCallback(async (userId, token) => {
+    try {
+      const res = await fetch('/api/admin/impersonate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ userId }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      const data = await res.json();
+      setImpersonatedUser({
+        email: data.email,
+        settings: data.settings,
+        history: (data.history || []).map(h => ({
+          campaignId: h.campaign_id,
+          adSetId: h.ad_set_id,
+          campaignName: h.campaign_name,
+          adsCount: h.ads_count,
+          status: h.status,
+          results: h.results,
+          date: h.launched_at,
+        })),
+      });
+    } catch (err) {
+      console.error('Impersonation failed:', err);
+    }
+  }, []);
+
+  const exitImpersonation = useCallback(() => {
+    setImpersonatedUser(null);
+  }, []);
+
   const setSettings = useCallback((update) => {
     setSettingsState((prev) => {
       const next = typeof update === 'function' ? update(prev) : { ...prev, ...update };
@@ -183,6 +320,19 @@ export function AppProvider({ children }) {
             ad_account_id: next.adAccountId,
             utm_template: next.utmTemplate,
             enhancements: next.enhancements,
+            facebook_page_id: next.facebookPageId,
+            facebook_page_name: next.facebookPageName,
+            instagram_account_id: next.instagramAccountId,
+            instagram_account_name: next.instagramAccountName,
+            pixel_id: next.pixelId,
+            pixel_name: next.pixelName,
+            website_url: next.websiteUrl,
+            eu_advertising: next.euAdvertising,
+            onboarding_completed: next.onboardingCompleted,
+            facebook_user_name: next.facebookUserName,
+            token_expires_at: next.tokenExpiresAt,
+            hidden_fields: next.hiddenFields,
+            upload_defaults: next.uploadDefaults,
           }).eq('user_id', user.id).then(({ error }) => {
             if (error) console.error('Failed to save settings:', error);
           });
@@ -282,6 +432,14 @@ export function AppProvider({ children }) {
         toasts,
         addToast,
         removeToast,
+        impersonatedUser,
+        startImpersonation,
+        exitImpersonation,
+        billingStatus,
+        setBillingStatus,
+        prefetchedPages,
+        prefetchedAdAccounts,
+        prefetchedPixels,
       }}
     >
       {children}

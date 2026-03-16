@@ -81,7 +81,7 @@ export default function Metrics() {
   ];
 
   return (
-    <div className="p-6">
+    <div className="px-8 py-6">
       {!isConfigured && (
         <div className="mb-4 px-4 py-3 bg-warning/10 border border-warning/20 rounded-lg flex items-center gap-3 text-sm">
           <svg className="w-5 h-5 text-warning flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -92,7 +92,7 @@ export default function Metrics() {
       )}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Metrics</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Metrics</h1>
           <p className="text-text-secondary text-sm mt-1">Detailed ad performance analytics</p>
         </div>
         <div className="flex gap-3">
@@ -122,7 +122,7 @@ export default function Metrics() {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-border overflow-hidden">
+      <div className="glass-card rounded-xl border border-border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -131,7 +131,7 @@ export default function Metrics() {
                   <th
                     key={col.key}
                     onClick={() => col.sortable !== false && handleSort(col.key)}
-                    className={`px-4 py-3 text-left font-medium text-text-secondary ${
+                    className={`px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-text-secondary ${
                       col.sortable !== false ? 'cursor-pointer hover:text-text' : ''
                     }`}
                   >

@@ -21,7 +21,7 @@ function CardMedia({ file, contain }) {
   const fit = contain ? 'object-contain' : 'object-cover';
   if (!url) return <div className="w-full h-full bg-bg" />;
   return isImage
-    ? <img src={url} alt="" className={`w-full h-full ${fit}`} />
+    ? <img src={url} alt="" loading="lazy" className={`w-full h-full ${fit}`} />
     : <video src={url} className={`w-full h-full ${fit}`} controls muted autoPlay loop playsInline />;
 }
 
@@ -40,7 +40,7 @@ export default function AdPreview({ file, files, primaryText, headline, descript
   if (!hasContent) {
     return (
       <div className="text-center py-10 text-text-secondary text-xs">
-        Carica delle creative per vedere l'anteprima
+        Upload creatives to see preview
       </div>
     );
   }
@@ -65,20 +65,20 @@ export default function AdPreview({ file, files, primaryText, headline, descript
   return (
     <div className="space-y-3">
       {/* Placement toggle */}
-      <div className="flex gap-1 bg-bg rounded-lg p-0.5 w-fit">
+      <div className="flex gap-1 bg-bg-secondary rounded-md p-0.5 w-fit">
         <button type="button" onClick={() => setPlacement('feed')}
-          className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${placement === 'feed' ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
+          className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${placement === 'feed' ? 'bg-card shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
           Facebook Feed
         </button>
         <button type="button" onClick={() => setPlacement('story')}
-          className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${placement === 'story' ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
+          className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${placement === 'story' ? 'bg-card shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
           Instagram Story
         </button>
       </div>
 
       {placement === 'feed' ? (
         /* ========== FACEBOOK FEED PREVIEW ========== */
-        <div className="bg-white rounded-xl border border-border overflow-hidden max-w-[340px]">
+        <div className="glass-card rounded-lg border border-border overflow-hidden max-w-[340px]">
           {/* Header */}
           <div className="flex items-center gap-2.5 px-3 py-2.5">
             <div className="w-9 h-9 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0">
@@ -101,12 +101,12 @@ export default function AdPreview({ file, files, primaryText, headline, descript
               <p className={`text-xs leading-relaxed whitespace-pre-wrap ${!textExpanded ? 'line-clamp-3' : ''}`}>{primaryText}</p>
               {!textExpanded && primaryText.length > 120 && (
                 <button type="button" onClick={() => setTextExpanded(true)} className="text-xs text-text-secondary hover:text-text font-medium">
-                  ...altro
+                  ...more
                 </button>
               )}
               {textExpanded && (
                 <button type="button" onClick={() => setTextExpanded(false)} className="text-xs text-text-secondary hover:text-text font-medium">
-                  mostra meno
+                  show less
                 </button>
               )}
             </div>
@@ -171,7 +171,7 @@ export default function AdPreview({ file, files, primaryText, headline, descript
           ) : (
             /* ---- Single media ---- */
             <>
-              <div className="aspect-square bg-bg relative">
+              <div className="aspect-[4/5] bg-bg relative">
                 <CardMedia file={file} />
               </div>
               <div className="flex items-center justify-between px-3 py-2.5 bg-[#f0f2f5]">

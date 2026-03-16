@@ -28,10 +28,10 @@ export default function Toast() {
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className="toast-enter bg-white shadow-lg rounded-lg px-4 py-3 flex items-center gap-3 min-w-[300px] border border-border"
+          className="toast-enter glass-card shadow-lg rounded-md px-4 py-3 flex items-center gap-3 min-w-[300px]"
         >
           {icons[toast.type] || icons.info}
-          <span className="text-sm flex-1">{toast.message}</span>
+          <span className="text-[13px] flex-1">{toast.message}</span>
           <button
             onClick={() => removeToast(toast.id)}
             className="text-text-secondary hover:text-text p-1"

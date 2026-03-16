@@ -11,9 +11,10 @@ function getFileExt(name) {
   return name.split('.').pop().toUpperCase();
 }
 
-export default function CreativeCard({ creative, index, onToggleCustom, onUpdateField, onRemove, isCarousel, isFirst, isLast, onMove, globalCopy, adSets, isSelected, onToggleSelect }) {
+export default function CreativeCard({ creative, index, onToggleCustom, onUpdateField, isCarousel, isFirst, isLast, onMove, globalCopy, adSets, isSelected, onToggleSelect, viewMode }) {
   const [thumbnail, setThumbnail] = useState(null);
   const isImage = ACCEPTED_IMAGE_TYPES.includes(creative.file.type);
+  const isGrid = viewMode && viewMode !== 'list';
 
   useEffect(() => {
     if (isImage) {
@@ -30,9 +31,9 @@ export default function CreativeCard({ creative, index, onToggleCustom, onUpdate
       video.onloadeddata = () => { video.currentTime = 1; };
       video.onseeked = () => {
         const canvas = document.createElement('canvas');
-        canvas.width = 120;
-        canvas.height = 120;
-        canvas.getContext('2d').drawImage(video, 0, 0, 120, 120);
+        canvas.width = 320;
+        canvas.height = 320;
+        canvas.getContext('2d').drawImage(video, 0, 0, 320, 320);
         setThumbnail(canvas.toDataURL());
         if (!revoked) { URL.revokeObjectURL(url); revoked = true; }
       };
@@ -55,6 +56,100 @@ export default function CreativeCard({ creative, index, onToggleCustom, onUpdate
     ? (adSets || []).map((a) => a._color)
     : adSetIds.map((id) => (adSets || []).find((a) => a._id === id)?._color).filter(Boolean);
 
+  // ---- GRID VIEW ----
+  if (isGrid) {
+    return (
+      <div
+        className={`rounded-lg border overflow-hidden transition-all cursor-pointer group hover-glow ${isSelected ? 'border-accent ring-2 ring-accent/20' : 'border-border hover:border-accent/40'}`}
+        onClick={onToggleSelect ? (e) => { if (e.target.closest('input, button, select, textarea, label')) return; onToggleSelect(creative.id, e.shiftKey); } : undefined}
+      >
+        {/* Thumbnail */}
+        <div className="aspect-square bg-bg relative">
+          {thumbnail ? (
+            <img src={thumbnail} alt="" loading="lazy" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <svg className="w-8 h-8 text-text-secondary/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </div>
+          )}
+          {/* Checkbox overlay */}
+          {onToggleSelect && (
+            <div className={`absolute top-1.5 left-1.5 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={() => onToggleSelect(creative.id)}
+                className="w-4 h-4 rounded border-white/80 text-accent focus:ring-accent/30 cursor-pointer shadow-sm"
+              />
+            </div>
+          )}
+          {/* Type badge */}
+          <div className="absolute top-1.5 right-1.5">
+            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isImage ? 'bg-accent/90 text-white' : 'bg-purple-500/90 text-white'}`}>
+              {getFileExt(creative.file.name)}
+            </span>
+          </div>
+          {/* Ad set dots */}
+          {adSets && adSets.length > 1 && !isCarousel && assignedColors.length > 0 && (
+            <div className="absolute bottom-1.5 right-1.5 flex items-center gap-0.5">
+              {assignedColors.slice(0, 5).map((color, i) => (
+                <span key={i} className="w-2 h-2 rounded-full border border-white/60" style={{ backgroundColor: color }} />
+              ))}
+              {assignedColors.length > 5 && (
+                <span className="text-[9px] text-white font-bold drop-shadow">+{assignedColors.length - 5}</span>
+              )}
+            </div>
+          )}
+        </div>
+        {/* Info + Custom toggle */}
+        <div className="px-2 py-1.5 flex items-center justify-between gap-1">
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium truncate">{creative.file.name}</p>
+            <p className="text-[10px] text-text-secondary">{formatSize(creative.file.size)}</p>
+          </div>
+          <label className="flex items-center gap-1 cursor-pointer select-none flex-shrink-0" title="Use custom copy" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={creative.useCustomCopy}
+              onChange={() => onToggleCustom(creative.id)}
+              className="w-3 h-3 rounded border-border text-accent focus:ring-accent/30 cursor-pointer"
+            />
+            <span className="text-[10px] text-text-secondary">Custom</span>
+          </label>
+        </div>
+        {/* Inline custom fields (grid) */}
+        {creative.useCustomCopy && (
+          <div className="px-2 pb-2 pt-0.5 border-t border-border bg-bg-secondary space-y-1.5" onClick={(e) => e.stopPropagation()}>
+            <textarea
+              rows={2}
+              value={creative.primaryText}
+              onChange={(e) => onUpdateField(creative.id, 'primaryText', e.target.value)}
+              className="w-full border border-border rounded px-2 py-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-accent/30 focus:border-accent resize-none bg-white"
+              placeholder={globalCopy?.primaryText || 'Primary Text...'}
+            />
+            <input
+              type="text"
+              value={creative.headline}
+              onChange={(e) => onUpdateField(creative.id, 'headline', e.target.value)}
+              className="w-full border border-border rounded px-2 py-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-accent/30 focus:border-accent bg-white"
+              placeholder={globalCopy?.headline || 'Headline...'}
+            />
+            <input
+              type="text"
+              value={creative.description}
+              onChange={(e) => onUpdateField(creative.id, 'description', e.target.value)}
+              className="w-full border border-border rounded px-2 py-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-accent/30 focus:border-accent bg-white"
+              placeholder={globalCopy?.description || 'Description...'}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ---- LIST VIEW ----
   return (
     <div
       className={`rounded-lg border transition-colors ${isSelected ? 'border-accent ring-2 ring-accent/20 bg-accent/[0.02]' : 'border-border'}`}
@@ -63,7 +158,7 @@ export default function CreativeCard({ creative, index, onToggleCustom, onUpdate
     >
       {/* Main row */}
       <div className="flex items-center gap-3 p-3">
-        {/* Selection checkbox (multi-adset single mode only) */}
+        {/* Selection checkbox */}
         {onToggleSelect && (
           <input
             type="checkbox"
@@ -76,7 +171,7 @@ export default function CreativeCard({ creative, index, onToggleCustom, onUpdate
         {/* Thumbnail */}
         <div className="w-[52px] h-[52px] rounded-lg overflow-hidden bg-bg flex-shrink-0 flex items-center justify-center">
           {thumbnail ? (
-            <img src={thumbnail} alt="" className="w-full h-full object-cover" />
+            <img src={thumbnail} alt="" loading="lazy" className="w-full h-full object-cover" />
           ) : (
             <svg className="w-5 h-5 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -123,7 +218,7 @@ export default function CreativeCard({ creative, index, onToggleCustom, onUpdate
           <span className="text-xs text-success font-medium">Ready</span>
         </div>
 
-        {/* Reorder (carousel only) + Custom toggle + remove */}
+        {/* Reorder (carousel only) + Custom toggle */}
         <div className="flex items-center gap-2 flex-shrink-0">
           {isCarousel && (
             <div className="flex flex-col gap-0.5">
@@ -154,21 +249,12 @@ export default function CreativeCard({ creative, index, onToggleCustom, onUpdate
             />
             <span className="text-xs text-text-secondary">Custom</span>
           </label>
-          <button
-            onClick={() => onRemove(creative.id)}
-            title="Remove"
-            className="w-7 h-7 rounded-full bg-bg border border-border text-text-secondary hover:bg-danger hover:text-white hover:border-danger transition-colors flex items-center justify-center"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
         </div>
       </div>
 
       {/* Inline custom fields */}
       {creative.useCustomCopy && (
-        <div className="px-3 pb-3 pt-1 border-t border-border bg-bg/50 space-y-2">
+        <div className="px-3 pb-3 pt-1 border-t border-border bg-bg-secondary space-y-2">
           <div className="text-xs font-medium text-accent mb-1">Override — leave empty to use global value</div>
           <textarea
             rows={2}

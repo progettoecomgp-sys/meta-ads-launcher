@@ -1,9 +1,5 @@
-# fly.toml app configuration file generated for meta-ads-launcher on 2026-02-27T18:35:24+01:00
-#
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
-#
-
-app = 'meta-ads-launcher'
+# Staging environment — deploy with: npm run deploy:staging
+app = 'meta-ads-launcher-staging'
 primary_region = 'fra'
 
 [build]
@@ -11,6 +7,7 @@ primary_region = 'fra'
     VITE_SUPABASE_URL = "https://tbmpogjcfopnmcgdbzox.supabase.co"
     VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRibXBvZ2pjZm9wbm1jZ2Riem94Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3ODgyNzAsImV4cCI6MjA4ODM2NDI3MH0.bmYY3aEmW32eXGwWCTKkQ-n7YrtonspGKJFs9IZQi0Q"
     VITE_META_APP_ID = "2355701498227354"
+    VITE_APP_ENV = "staging"
 
 [http_service]
   internal_port = 3000
@@ -21,7 +18,7 @@ primary_region = 'fra'
   processes = ['app']
 
 [[vm]]
-  memory = '1gb'
+  memory = '512mb'
   cpu_kind = 'shared'
   cpus = 1
-  memory_mb = 1024
+  memory_mb = 512
