@@ -634,6 +634,7 @@ export default function Upload() {
   const [bgLaunches, setBgLaunches] = useState([]);
   const [adStatus, setAdStatus] = useState(s.adStatus || defaults.adStatus || 'PAUSED');
   const [previewIndex, setPreviewIndex] = useState(0);
+  const [showPreview, setShowPreview] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [logEntries, setLogEntries] = useState([]);
   const logEndRef = useRef(null);
@@ -1311,18 +1312,6 @@ export default function Upload() {
 
         <div className="flex-1" />
 
-        {/* Ad Status toggle */}
-        <div className="flex items-center gap-1.5 bg-white/60 rounded-lg px-2.5 py-1.5 border border-border/50">
-          <span className="text-[11px] font-medium text-text-secondary">Status:</span>
-          <button type="button" onClick={() => setAdStatus(adStatus === 'PAUSED' ? 'ACTIVE' : 'PAUSED')}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${adStatus === 'ACTIVE' ? 'bg-success' : 'bg-border'}`}>
-            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${adStatus === 'ACTIVE' ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
-          </button>
-          <span className={`text-[11px] font-semibold ${adStatus === 'ACTIVE' ? 'text-success' : 'text-text-secondary'}`}>
-            {adStatus === 'ACTIVE' ? 'Active' : 'Paused'}
-          </span>
-        </div>
-
         {/* Launch button */}
         <button
           onClick={handleLaunch}
@@ -1653,20 +1642,35 @@ export default function Upload() {
                 </div>
                 <div className="flex items-center gap-2">
                   {/* View mode toggle */}
-                  {files.length > 0 && creativeType === 'single' && (
-                    <div className="flex gap-0.5 bg-bg rounded-lg p-0.5">
-                      {[
-                        { key: 'list', icon: <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg> },
-                        { key: '3', label: '3' },
-                        { key: '4', label: '4' },
-                        { key: '5', label: '5' },
-                      ].map(({ key, icon, label }) => (
-                        <button key={key} type="button" onClick={() => setViewMode(key)}
-                          className={`w-7 h-7 flex items-center justify-center rounded-md text-xs font-bold transition-colors ${viewMode === key ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}
-                          title={key === 'list' ? 'List view' : `${key} columns`}>
-                          {icon || label}
-                        </button>
-                      ))}
+                  {files.length > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      {/* Preview toggle */}
+                      <button type="button" onClick={() => setShowPreview(!showPreview)}
+                        className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors ${showPreview ? 'bg-accent text-white' : 'text-text-secondary hover:bg-bg hover:text-text'}`}
+                        title="Preview">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                      </button>
+
+                      {/* View mode toggle */}
+                      {creativeType === 'single' && (
+                        <div className="flex gap-0.5 bg-bg rounded-lg p-0.5">
+                          {[
+                            { key: 'list', icon: <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg> },
+                            { key: '3', label: '3' },
+                            { key: '4', label: '4' },
+                            { key: '5', label: '5' },
+                          ].map(({ key, icon, label }) => (
+                            <button key={key} type="button" onClick={() => setViewMode(key)}
+                              className={`w-7 h-7 flex items-center justify-center rounded-md text-xs font-bold transition-colors ${viewMode === key ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}
+                              title={key === 'list' ? 'List view' : `${key} columns`}>
+                              {icon || label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1848,8 +1852,8 @@ export default function Upload() {
               )}
             </div>
 
-            {/* Ad Preview */}
-            {files.length > 0 && (() => {
+            {/* Ad Preview (toggled by eye icon) */}
+            {showPreview && files.length > 0 && (() => {
               const previewFiles = filterAdSetId
                 ? files.filter((f) => {
                     const ids = f.adSetIds || ['__all__'];
