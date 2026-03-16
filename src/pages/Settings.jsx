@@ -482,13 +482,6 @@ export default function Settings() {
 
                 <Select label="Conversion Event" value={uploadDefaults.conversionEvent || 'PURCHASE'}
                   onChange={(v) => updateDefault('conversionEvent', v)} options={CONVERSION_EVENTS} />
-
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1">Website URL</label>
-                  <input type="url" value={uploadDefaults.websiteUrl || ''}
-                    onChange={(e) => updateDefault('websiteUrl', e.target.value)}
-                    className={inputCls} placeholder="https://example.com" />
-                </div>
               </div>
             </div>
           </div>
