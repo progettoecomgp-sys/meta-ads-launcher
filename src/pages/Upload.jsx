@@ -1410,22 +1410,13 @@ export default function Upload() {
               </>
             ) : (
               <>
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1">Campaign</label>
-                  <select value={selectedCampaign} onChange={(e) => { setSelectedCampaign(e.target.value); setAdSetsState([makeDefaultAdSet()]); }} className={inputCls}>
-                    <option value="">Select a campaign...</option>
-                    {(() => {
-                      const sorted = [...campaigns].sort((a, b) => (a.status === 'ACTIVE' ? 0 : 1) - (b.status === 'ACTIVE' ? 0 : 1));
-                      const firstInactiveIdx = sorted.findIndex((c) => c.status !== 'ACTIVE');
-                      return sorted.map((c, i) => (
-                        <React.Fragment key={c.id}>
-                          {i === firstInactiveIdx && firstInactiveIdx > 0 && <option disabled>{'─'.repeat(30)}</option>}
-                          <option value={c.id}>{c.name} — {c.status}</option>
-                        </React.Fragment>
-                      ));
-                    })()}
-                  </select>
-                </div>
+                <Select
+                  label="Campaign"
+                  value={selectedCampaign}
+                  onChange={(v) => { setSelectedCampaign(v); setAdSetsState([makeDefaultAdSet()]); }}
+                  placeholder="Select a campaign..."
+                  options={[...campaigns].sort((a, b) => (a.status === 'ACTIVE' ? 0 : 1) - (b.status === 'ACTIVE' ? 0 : 1)).map((c) => ({ value: c.id, label: `${c.name} — ${c.status}` }))}
+                />
                 {selectedCampaignObj && (
                   <p className="text-xs text-text-secondary">
                     {isCBO ? 'CBO — budget at campaign level' : 'ABO — budget at ad set level'}
@@ -1464,7 +1455,7 @@ export default function Upload() {
               {/* Quick add N copies */}
               <div className="flex items-center gap-1">
                 <input
-                  type="number" min="1" max="50" defaultValue="5"
+                  type="number" min="1" max="50" defaultValue="1"
                   id="adset-count-input"
                   className="w-14 border border-border rounded-lg px-2 py-1.5 text-xs text-center focus:outline-none focus:ring-1 focus:ring-accent/30"
                 />
@@ -1485,12 +1476,11 @@ export default function Upload() {
               </button>
               {/* In existing mode: add from existing campaign adsets */}
               {mode === 'existing' && apiAdSets.length > 0 && (
-                <select
+                <Select
                   value=""
-                  onChange={(e) => {
-                    const apiAs = apiAdSets.find((a) => a.id === e.target.value);
+                  onChange={(v) => {
+                    const apiAs = apiAdSets.find((a) => a.id === v);
                     if (!apiAs) return;
-                    // Check if already added
                     if (adSetsState.some((as) => as.existingId === apiAs.id)) {
                       addToast('Ad set already added', 'error');
                       return;
@@ -1501,13 +1491,9 @@ export default function Upload() {
                       name: apiAs.name,
                     })]);
                   }}
-                  className="border border-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white"
-                >
-                  <option value="">+ Add existing...</option>
-                  {apiAdSets.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name} — {a.status}</option>
-                  ))}
-                </select>
+                  placeholder="+ Add existing..."
+                  options={apiAdSets.map((a) => ({ value: a.id, label: `${a.name} — ${a.status}` }))}
+                />
               )}
             </div>
 
@@ -1608,12 +1594,7 @@ export default function Upload() {
                 )}
               </div>
               {!hidden.cta && (
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1">CTA Button</label>
-                  <select value={globalCopy.cta} onChange={(e) => setGlobalCopy({ ...globalCopy, cta: e.target.value })} className={inputCls}>
-                    {CTA_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                  </select>
-                </div>
+                <Select label="CTA Button" value={globalCopy.cta} onChange={(v) => setGlobalCopy({ ...globalCopy, cta: v })} options={CTA_OPTIONS} />
               )}
             </div>
           </div>

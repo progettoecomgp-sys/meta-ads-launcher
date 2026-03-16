@@ -241,13 +241,13 @@ export default function AdSetCard({
             )}
 
             {!hiddenFields.selectedPixel && (
-              <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1">Dataset (Pixel)</label>
-                <select value={adSet.selectedPixel} onChange={(e) => set('selectedPixel', e.target.value)} className={inputCls}>
-                  <option value="">No pixel</option>
-                  {pixels.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.id})</option>)}
-                </select>
-              </div>
+              <Select
+                label="Dataset (Pixel)"
+                value={adSet.selectedPixel}
+                onChange={(v) => set('selectedPixel', v)}
+                placeholder="No pixel"
+                options={pixels.map((p) => ({ value: p.id, label: `${p.name} (${p.id})` }))}
+              />
             )}
 
             {adSet.selectedPixel && !hiddenFields.conversionEvent && (
