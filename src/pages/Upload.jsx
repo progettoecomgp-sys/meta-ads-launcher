@@ -1527,28 +1527,23 @@ export default function Upload() {
             ))}
           </div>
 
-          {/* Website URL — inline */}
-          <div className="glass-card rounded-xl p-4 space-y-3">
-            {!hidden.websiteUrl && (
-              <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1">Website URL</label>
-                <input type="url" value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} className={inputCls} placeholder="https://example.com" />
-              </div>
-            )}
-            {/* Fallback: manual Page/IG input when API doesn't load them */}
-            {pages.length === 0 && (
-              <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1">Facebook Page ID</label>
-                <input type="text" value={selectedPage} onChange={(e) => setSelectedPage(e.target.value)} className={inputCls} placeholder="Page ID (es. 123456789)" />
-              </div>
-            )}
-            {igAccounts.length === 0 && (
-              <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1">Instagram Account ID <span className="font-normal text-text-tertiary">(optional)</span></label>
-                <input type="text" value={selectedIgAccount} onChange={(e) => setSelectedIgAccount(e.target.value)} className={inputCls} placeholder="IG Account ID (optional)" />
-              </div>
-            )}
-          </div>
+          {/* Fallback: manual Page/IG input when API doesn't load them */}
+          {(pages.length === 0 || igAccounts.length === 0) && (
+            <div className="glass-card rounded-xl p-4 space-y-3">
+              {pages.length === 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Facebook Page ID</label>
+                  <input type="text" value={selectedPage} onChange={(e) => setSelectedPage(e.target.value)} className={inputCls} placeholder="Page ID (es. 123456789)" />
+                </div>
+              )}
+              {igAccounts.length === 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Instagram Account ID <span className="font-normal text-text-tertiary">(optional)</span></label>
+                  <input type="text" value={selectedIgAccount} onChange={(e) => setSelectedIgAccount(e.target.value)} className={inputCls} placeholder="IG Account ID (optional)" />
+                </div>
+              )}
+            </div>
+          )}
 
         </div>
 
@@ -1593,9 +1588,17 @@ export default function Upload() {
                   </div>
                 )}
               </div>
-              {!hidden.cta && (
-                <Select label="CTA Button" value={globalCopy.cta} onChange={(v) => setGlobalCopy({ ...globalCopy, cta: v })} options={CTA_OPTIONS} />
-              )}
+              <div className="grid grid-cols-3 gap-3">
+                {!hidden.websiteUrl && (
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-text-secondary mb-1">Website URL</label>
+                    <input type="url" value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} className={inputCls} placeholder="https://example.com" />
+                  </div>
+                )}
+                {!hidden.cta && (
+                  <Select label="CTA" value={globalCopy.cta} onChange={(v) => setGlobalCopy({ ...globalCopy, cta: v })} options={CTA_OPTIONS} />
+                )}
+              </div>
             </div>
           </div>
 
