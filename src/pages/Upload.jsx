@@ -1415,7 +1415,19 @@ export default function Upload() {
                   value={selectedCampaign}
                   onChange={(v) => { setSelectedCampaign(v); setAdSetsState([makeDefaultAdSet()]); }}
                   placeholder="Select a campaign..."
-                  options={[...campaigns].sort((a, b) => (a.status === 'ACTIVE' ? 0 : 1) - (b.status === 'ACTIVE' ? 0 : 1)).map((c) => ({ value: c.id, label: `${c.name} — ${c.status}` }))}
+                  options={[...campaigns].sort((a, b) => (a.status === 'ACTIVE' ? 0 : 1) - (b.status === 'ACTIVE' ? 0 : 1)).map((c) => ({ value: c.id, label: c.name, status: c.status }))}
+                  renderOption={(opt) => (
+                    <span className="flex items-center gap-2 truncate">
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${opt.status === 'ACTIVE' ? 'bg-success' : 'bg-text-tertiary'}`} />
+                      <span className="truncate">{opt.label}</span>
+                    </span>
+                  )}
+                  renderSelected={(opt) => (
+                    <span className="flex items-center gap-2 truncate">
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${opt.status === 'ACTIVE' ? 'bg-success' : 'bg-text-tertiary'}`} />
+                      <span className="truncate">{opt.label}</span>
+                    </span>
+                  )}
                 />
                 {selectedCampaignObj && (
                   <p className="text-xs text-text-secondary">
@@ -1492,7 +1504,13 @@ export default function Upload() {
                     })]);
                   }}
                   placeholder="+ Add existing..."
-                  options={apiAdSets.map((a) => ({ value: a.id, label: `${a.name} — ${a.status}` }))}
+                  options={apiAdSets.map((a) => ({ value: a.id, label: a.name, status: a.status }))}
+                  renderOption={(opt) => (
+                    <span className="flex items-center gap-2 truncate">
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${opt.status === 'ACTIVE' ? 'bg-success' : 'bg-text-tertiary'}`} />
+                      <span className="truncate">{opt.label}</span>
+                    </span>
+                  )}
                 />
               )}
             </div>
