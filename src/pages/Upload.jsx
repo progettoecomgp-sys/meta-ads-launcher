@@ -1339,15 +1339,15 @@ export default function Upload() {
 
           {/* Campaign config — with integrated mode toggle */}
           <div className="glass-card rounded-xl p-4 space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
               <h2 className="text-sm font-semibold">Campaign</h2>
-              <div className="flex gap-0.5 bg-bg/80 rounded-lg p-0.5">
+              <div className="flex gap-1 bg-bg rounded-lg p-1">
                 <button type="button" onClick={() => setMode('new')}
-                  className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-colors ${mode === 'new' ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
+                  className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${mode === 'new' ? 'bg-accent text-white shadow-sm' : 'text-text-secondary hover:text-text hover:bg-white/60'}`}>
                   New
                 </button>
                 <button type="button" onClick={() => setMode('existing')}
-                  className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-colors ${mode === 'existing' ? 'bg-white shadow-sm text-text' : 'text-text-secondary hover:text-text'}`}>
+                  className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${mode === 'existing' ? 'bg-accent text-white shadow-sm' : 'text-text-secondary hover:text-text hover:bg-white/60'}`}>
                   Existing
                 </button>
               </div>
@@ -1479,13 +1479,6 @@ export default function Upload() {
                   Duplicate first
                 </button>
               </div>
-              <button type="button" onClick={() => addAdSet()}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Add Ad Set
-              </button>
               {/* In existing mode: add from existing campaign adsets */}
               {mode === 'existing' && apiAdSets.length > 0 && (
                 <Select
@@ -1503,7 +1496,7 @@ export default function Upload() {
                       name: apiAs.name,
                     })]);
                   }}
-                  placeholder="+ Add existing..."
+                  placeholder="+ Add Existing Ad Set"
                   options={apiAdSets.map((a) => ({ value: a.id, label: a.name, status: a.status }))}
                   renderOption={(opt) => (
                     <span className="flex items-center gap-2 truncate">
@@ -1513,6 +1506,13 @@ export default function Upload() {
                   )}
                 />
               )}
+              <button type="button" onClick={() => addAdSet()}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors whitespace-nowrap">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add New Ad Set
+              </button>
             </div>
 
             {/* Ad Set Cards */}
