@@ -1541,6 +1541,15 @@ export default function Upload() {
                 onToggleSelect={toggleAdSetSelection}
                 onFilter={handleFilterByAdSet}
                 isFiltered={filterAdSetId === as._id}
+                onSavePreset={(name) => {
+                  if (!name.trim()) return;
+                  const preset = { name: name.trim(), countries: as.countries || [], excludedCountries: as.excludedCountries || [], excludedRegions: as.excludedRegions || [] };
+                  const updated = [...countryPresets.filter((p) => p.name !== name.trim()), preset];
+                  setCountryPresets(updated);
+                  localStorage.setItem(PRESETS_KEY, JSON.stringify(updated));
+                  addToast(`Preset "${name.trim()}" saved`);
+                }}
+                onDeletePreset={deletePreset}
               />
             ))}
           </div>

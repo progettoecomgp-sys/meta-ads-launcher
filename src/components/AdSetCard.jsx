@@ -11,12 +11,16 @@ export default function AdSetCard({
   onUpdate, onDuplicate, onRemove, isCBO, bidStrategy,
   creativeCount, onUploadForAdSet, onFolderForAdSet,
   isSelected, onToggleSelect, onFilter, isFiltered,
+  onSavePreset, onDeletePreset,
 }) {
+  const isExisting = adSet._type === 'existing';
   const fileInputRef = useRef(null);
   const folderInputRef = useRef(null);
   const uploadMenuRef = useRef(null);
-  const [collapsed, setCollapsed] = useState(adSet._collapsed ?? false);
+  const [collapsed, setCollapsed] = useState(adSet._collapsed ?? isExisting);
   const [showUploadMenu, setShowUploadMenu] = useState(false);
+  const [showSavePreset, setShowSavePreset] = useState(false);
+  const [presetName, setPresetName] = useState('');
   const inputCls = "w-full border border-border rounded-md px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-accent/[0.15] focus:border-accent bg-white";
 
   useEffect(() => {
@@ -61,34 +65,6 @@ export default function AdSetCard({
   const audienceType = adSet.gender === 'all' ? 'Broad' : adSet.gender === 'male' ? 'Male' : 'Female';
   const countryCodes = (adSet.countries || []).join(', ');
   const ageRange = `${adSet.ageMin || '18'}-${adSet.ageMax || '65'}`;
-
-  // ── Existing adset (read-only) ──
-  if (adSet._type === 'existing') {
-    return (
-      <div className={`rounded-xl border bg-accent/[0.03] ${isSelected ? 'border-accent ring-2 ring-accent/20' : 'border-accent/10'}`}>
-        <div className="flex items-center gap-2 px-3.5 py-2.5">
-          {onToggleSelect && (
-            <input type="checkbox" checked={isSelected} onChange={() => onToggleSelect(adSet._id)}
-              className="w-3.5 h-3.5 rounded border-border text-accent focus:ring-accent/30 cursor-pointer flex-shrink-0" />
-          )}
-          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: adSet._color }} />
-          <svg className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-          </svg>
-          <span className="text-sm font-medium flex-1 truncate">{adSet.name}</span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent/10 text-accent font-semibold">existing</span>
-          {total > 1 && (
-            <button onClick={() => onRemove(adSet._id)} title="Remove"
-              className="w-6 h-6 rounded-lg text-text-tertiary hover:bg-danger/10 hover:text-danger transition-colors flex items-center justify-center">
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className={`rounded-xl border ${isSelected ? 'border-accent ring-2 ring-accent/20' : 'border-accent/10'} bg-accent/[0.03]`}>
@@ -151,6 +127,11 @@ export default function AdSetCard({
             {ageRange}
           </span>
         </div>
+
+        {/* Existing badge */}
+        {isExisting && (
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent/10 text-accent font-semibold flex-shrink-0">existing</span>
+        )}
 
         {/* Creative count */}
         {creativeCount != null && (
@@ -291,22 +272,65 @@ export default function AdSetCard({
                 {countryPresets.length > 0 && (
                   <div className="flex items-center flex-wrap gap-1.5 mb-2">
                     {countryPresets.map((p) => (
-                      <div key={p.name} className="group relative">
+                      <div key={p.name} className="group relative inline-flex items-center">
                         <button type="button" onClick={() => {
                           set('countries', p.countries || []);
                           set('excludedCountries', p.excludedCountries || []);
                           set('excludedRegions', p.excludedRegions || []);
                           if ((p.excludedCountries?.length > 0) || (p.excludedRegions?.length > 0)) set('showExclusions', true);
                         }}
-                          className="px-3 py-1.5 text-xs font-medium bg-accent/10 text-accent rounded-lg hover:bg-accent hover:text-white hover:shadow-md hover:scale-[1.04] transition-all duration-150 cursor-pointer">
+                          className="px-3 py-1.5 text-xs font-medium bg-accent/10 text-accent rounded-l-lg hover:bg-accent hover:text-white transition-all duration-150 cursor-pointer">
                           {p.name}
                         </button>
+                        {onDeletePreset && (
+                          <button type="button" onClick={() => onDeletePreset(p.name)}
+                            className="px-1.5 py-1.5 text-xs bg-accent/10 text-accent/50 rounded-r-lg hover:bg-danger/10 hover:text-danger transition-all border-l border-accent/20">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
                 )}
 
                 <CountryPicker selected={adSet.countries} onChange={(v) => set('countries', v)} />
+
+                {/* Save as preset */}
+                {onSavePreset && (adSet.countries || []).length > 0 && (
+                  <div className="mt-2">
+                    {showSavePreset ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={presetName}
+                          onChange={(e) => setPresetName(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' && presetName.trim()) { onSavePreset(presetName.trim()); setPresetName(''); setShowSavePreset(false); } }}
+                          className="flex-1 border border-border rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-accent/30"
+                          placeholder="Preset name..."
+                          autoFocus
+                        />
+                        <button type="button" onClick={() => { if (presetName.trim()) { onSavePreset(presetName.trim()); setPresetName(''); setShowSavePreset(false); } }}
+                          className="px-3 py-1.5 text-xs font-medium bg-accent text-white rounded-md hover:bg-accent-hover transition-colors">
+                          Save
+                        </button>
+                        <button type="button" onClick={() => { setShowSavePreset(false); setPresetName(''); }}
+                          className="px-2 py-1.5 text-xs text-text-secondary hover:text-text transition-colors">
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => setShowSavePreset(true)}
+                        className="flex items-center gap-1 text-xs font-medium text-text-secondary hover:text-accent transition-colors">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                        </svg>
+                        Save as preset
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 <button type="button" onClick={() => {
                   const next = !adSet.showExclusions;

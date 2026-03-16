@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { searchRegions } from '../utils/metaApi';
 
 export default function RegionPicker({ selected, onChange, accessToken, countries }) {
@@ -7,17 +8,28 @@ export default function RegionPicker({ selected, onChange, accessToken, countrie
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const ref = useRef(null);
+  const dropRef = useRef(null);
   const debounceRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
 
   // Close on click outside
   useEffect(() => {
     if (!open) return;
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target) && dropRef.current && !dropRef.current.contains(e.target)) setOpen(false);
+    };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  // Debounced search — filter results by included countries
+  // Position dropdown
+  useEffect(() => {
+    if (!open || !ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    setPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+  }, [open]);
+
+  // Debounced search
   const doSearch = useCallback((query) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!query || query.length < 2 || !accessToken) {
@@ -29,7 +41,6 @@ export default function RegionPicker({ selected, onChange, accessToken, countrie
     debounceRef.current = setTimeout(async () => {
       try {
         const data = await searchRegions(accessToken, query);
-        // Filter to only show regions from included countries
         const countryCodes = countries || [];
         const filtered = countryCodes.length > 0
           ? data.filter((r) => countryCodes.includes(r.country_code))
@@ -88,26 +99,26 @@ export default function RegionPicker({ selected, onChange, accessToken, countrie
           onChange={(e) => { setSearch(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
           className="flex-1 min-w-[80px] outline-none text-sm bg-transparent py-0.5"
-          placeholder={selected.length === 0 ? 'Cerca regioni...' : ''}
+          placeholder={selected.length === 0 ? 'Search regions...' : ''}
         />
       </div>
 
-      {/* Dropdown */}
-      {open && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-border rounded-lg shadow-lg max-h-[240px] overflow-y-auto">
+      {/* Dropdown via portal */}
+      {open && createPortal(
+        <div ref={dropRef} className="fixed bg-white border border-border rounded-xl shadow-lg max-h-[240px] overflow-y-auto" style={{ top: pos.top, left: pos.left, width: pos.width, zIndex: 9999 }}>
           {!accessToken ? (
-            <div className="px-3 py-2 text-xs text-text-secondary">Configura l'access token per cercare regioni</div>
+            <div className="px-3 py-2 text-xs text-text-secondary">Configure access token to search regions</div>
           ) : !hasCountries ? (
-            <div className="px-3 py-2 text-xs text-text-secondary">Aggiungi almeno un paese incluso per cercare regioni</div>
+            <div className="px-3 py-2 text-xs text-text-secondary">Add at least one country to search regions</div>
           ) : search.length < 2 ? (
-            <div className="px-3 py-2 text-xs text-text-secondary">Digita almeno 2 caratteri per cercare...</div>
+            <div className="px-3 py-2 text-xs text-text-secondary">Type at least 2 characters to search...</div>
           ) : loading ? (
             <div className="px-3 py-3 flex items-center justify-center gap-2">
               <div className="w-3.5 h-3.5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-              <span className="text-xs text-text-secondary">Ricerca...</span>
+              <span className="text-xs text-text-secondary">Searching...</span>
             </div>
           ) : results.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-text-secondary">Nessuna regione trovata per {countries.join(', ')}</div>
+            <div className="px-3 py-2 text-xs text-text-secondary">No regions found for {countries.join(', ')}</div>
           ) : (
             results.map((r) => {
               const isSelected = selected.some((s) => s.key === r.key);
@@ -116,7 +127,7 @@ export default function RegionPicker({ selected, onChange, accessToken, countrie
                   key={r.key}
                   type="button"
                   onClick={() => toggle(r)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-bg transition-colors ${isSelected ? 'bg-danger/5' : ''}`}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-accent/5 transition-colors ${isSelected ? 'bg-danger/5' : ''}`}
                 >
                   <input type="checkbox" checked={isSelected} readOnly
                     className="w-3.5 h-3.5 rounded border-border text-danger focus:ring-0 pointer-events-none" />
@@ -126,7 +137,8 @@ export default function RegionPicker({ selected, onChange, accessToken, countrie
               );
             })
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

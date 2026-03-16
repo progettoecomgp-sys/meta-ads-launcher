@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 const MONTHS = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const DAYS = ['Lu','Ma','Me','Gi','Ve','Sa','Do'];
@@ -26,7 +27,6 @@ function buildCalendar(year, month) {
 
 function parseValue(value) {
   if (!value) return null;
-  // value = "2026-02-28T09:00" (datetime-local format)
   const [datePart, timePart] = value.split('T');
   const [y, m, d] = datePart.split('-').map(Number);
   const [h, min] = (timePart || '00:00').split(':').map(Number);
@@ -40,6 +40,8 @@ function formatValue(year, month, day, hour, minute) {
 export default function DateTimePicker({ value, onChange, placeholder }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const dropRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
 
   const parsed = parseValue(value);
   const today = new Date();
@@ -55,9 +57,18 @@ export default function DateTimePicker({ value, onChange, placeholder }) {
   // Close on click outside
   useEffect(() => {
     if (!open) return;
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target) && dropRef.current && !dropRef.current.contains(e.target)) setOpen(false);
+    };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  // Position dropdown via portal
+  useEffect(() => {
+    if (!open || !ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    setPos({ top: rect.bottom + 4, left: rect.left });
   }, [open]);
 
   const calendar = buildCalendar(viewYear, viewMonth);
@@ -73,9 +84,7 @@ export default function DateTimePicker({ value, onChange, placeholder }) {
 
   const selectDay = (day, isCurrent) => {
     if (!isCurrent) return;
-    const h = selHour;
-    const m = selMinute;
-    onChange(formatValue(viewYear, viewMonth, day, h, m));
+    onChange(formatValue(viewYear, viewMonth, day, selHour, selMinute));
   };
 
   const setHour = (h) => {
@@ -133,9 +142,9 @@ export default function DateTimePicker({ value, onChange, placeholder }) {
         )}
       </div>
 
-      {/* Dropdown */}
-      {open && (
-        <div className="absolute z-50 mt-1 bg-white border border-border rounded-xl shadow-lg p-4 w-[300px]">
+      {/* Dropdown via portal */}
+      {open && createPortal(
+        <div ref={dropRef} className="fixed bg-white border border-border rounded-xl shadow-lg p-4 w-[300px]" style={{ top: pos.top, left: pos.left, zIndex: 9999 }}>
           {/* Month navigation */}
           <div className="flex items-center justify-between mb-3">
             <button type="button" onClick={prevMonth} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-bg transition-colors">
@@ -205,7 +214,8 @@ export default function DateTimePicker({ value, onChange, placeholder }) {
               <span className="text-xs text-text-secondary ml-auto">Timezone ad account</span>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
