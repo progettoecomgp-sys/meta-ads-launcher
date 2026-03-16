@@ -56,8 +56,7 @@ const FIELD_GROUPS = [
 ];
 
 const TABS = [
-  { key: 'url', label: 'URL Parameters', icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg> },
-  { key: 'creative', label: 'Advantage+', icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg> },
+  { key: 'params', label: 'Parameters', icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg> },
   { key: 'visibility', label: 'Field Visibility', icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg> },
   { key: 'defaults', label: 'Default Values', icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg> },
 ];
@@ -120,7 +119,7 @@ function ToggleSwitch({ checked, onChange }) {
 
 export default function Settings() {
   const { settings, setSettings, addToast } = useApp();
-  const [activeTab, setActiveTab] = useState('url');
+  const [activeTab, setActiveTab] = useState('params');
   const contentRef = useRef(null);
 
   const hiddenFields = settings.hiddenFields || {};
@@ -174,7 +173,7 @@ export default function Settings() {
       </div>
 
       {/* ── Tab Navigation ── */}
-      <div className="flex gap-1 bg-bg/80 rounded-xl p-1 mb-6 sticky top-0 z-10 backdrop-blur-sm">
+      <div className="flex gap-1 bg-bg/80 rounded-xl p-1 mb-6 sticky top-0 z-10 backdrop-blur-sm" role="tablist">
         {TABS.map((tab) => (
           <button
             key={tab.key}
@@ -198,131 +197,116 @@ export default function Settings() {
       {/* ── Tab Content ── */}
       <div ref={contentRef}>
 
-        {/* ── URL Parameters ── */}
-        {activeTab === 'url' && (
-          <div className="glass-card rounded-xl p-6 space-y-4 max-w-2xl">
-            <div>
-              <h2 className="text-sm font-semibold">URL Parameters</h2>
-              <p className="text-xs text-text-secondary mt-0.5">
-                Automatically added to every ad link. Same format as Facebook Ads Manager.
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1.5">URL Parameters</label>
-              <p className="text-xs text-text-secondary mb-2">Add your UTM parameters here</p>
-              <textarea
-                rows={3}
-                value={settings.utmTemplate || ''}
-                onChange={(e) => setSettings({ utmTemplate: e.target.value })}
-                className={`${inputCls} font-mono resize-none`}
-                placeholder="key1=value1&key2=value2"
-              />
-              <p className="text-xs text-text-secondary mt-1.5">
-                Available macros: <code className="bg-bg px-1 rounded">{'{{campaign.name}}'}</code> <code className="bg-bg px-1 rounded">{'{{adset.name}}'}</code> <code className="bg-bg px-1 rounded">{'{{ad.name}}'}</code> <code className="bg-bg px-1 rounded">{'{{campaign.id}}'}</code> <code className="bg-bg px-1 rounded">{'{{adset.id}}'}</code> <code className="bg-bg px-1 rounded">{'{{ad.id}}'}</code>
-              </p>
-            </div>
-            {settings.utmTemplate && (
-              <div className="bg-bg rounded-lg p-3">
-                <p className="text-xs font-medium text-text-secondary mb-1">Preview:</p>
-                <p className="text-xs text-text break-all font-mono">
-                  https://example.com?{settings.utmTemplate}
+        {/* ── Parameters: URL + DSA + Enhancements ── */}
+        {activeTab === 'params' && (
+          <div className="grid grid-cols-2 gap-4">
+            {/* Left column: URL Parameters + DSA */}
+            <div className="space-y-4">
+              <div className="glass-card rounded-xl p-5">
+                <h2 className="text-sm font-semibold mb-2">URL Parameters</h2>
+                <textarea
+                  rows={2}
+                  value={settings.utmTemplate || ''}
+                  onChange={(e) => setSettings({ utmTemplate: e.target.value })}
+                  className={`${inputCls} font-mono resize-none text-[12px]`}
+                  placeholder="key1=value1&key2=value2"
+                />
+                <p className="text-[10px] text-text-tertiary mt-1.5">
+                  Macros: <code className="bg-bg px-1 rounded">{'{{campaign.name}}'}</code> <code className="bg-bg px-1 rounded">{'{{adset.name}}'}</code> <code className="bg-bg px-1 rounded">{'{{ad.name}}'}</code> <code className="bg-bg px-1 rounded">{'{{campaign.id}}'}</code> <code className="bg-bg px-1 rounded">{'{{adset.id}}'}</code> <code className="bg-bg px-1 rounded">{'{{ad.id}}'}</code>
                 </p>
-              </div>
-            )}
-
-            {/* DSA — EU Digital Services Act */}
-            <div className="border-t border-border pt-4 mt-2">
-              <div className="flex items-center gap-2 mb-3">
-                <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
-                </svg>
-                <div>
-                  <h3 className="text-sm font-semibold">EU Digital Services Act (DSA)</h3>
-                  <p className="text-xs text-text-secondary">Auto-filled on every ad set targeting EU countries</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1">Beneficiary</label>
-                  <input
-                    type="text"
-                    value={settings.dsaBeneficiary || ''}
-                    onChange={(e) => setSettings({ dsaBeneficiary: e.target.value })}
-                    className={inputCls}
-                    placeholder="Company or person name"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1">Payor</label>
-                  <input
-                    type="text"
-                    value={settings.dsaPayor || ''}
-                    onChange={(e) => setSettings({ dsaPayor: e.target.value })}
-                    className={inputCls}
-                    placeholder="Who pays for the ads"
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-text-tertiary mt-2">Required by EU law for ads targeting EEA countries. Set once, applied to every launch.</p>
-            </div>
-          </div>
-        )}
-
-        {/* ── Creative Settings / Advantage+ ── */}
-        {activeTab === 'creative' && (
-          <div className="glass-card rounded-xl p-6 max-w-2xl">
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h2 className="text-[16px] font-semibold">Creative Settings</h2>
-                <p className="text-xs text-text-secondary">Configure Advantage+ enhancements per creative type</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSettings({ enhancements: { image: {}, video: {}, carousel: {} } })}
-                className="text-xs text-danger hover:text-danger/80 font-medium"
-              >
-                Disable all
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              {[
-                { key: 'image', label: 'Images', icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg> },
-                { key: 'video', label: 'Videos', icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg> },
-                { key: 'carousel', label: 'Carousel', icon: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg> },
-              ].map((type) => {
-                const enhancements = settings.enhancements || {};
-                const typeSettings = enhancements[type.key] || {};
-                const config = ENHANCEMENT_CONFIGS[type.key] || [];
-                const enabledCount = config.filter((item) => typeSettings[item.key]).length;
-
-                return (
-                  <div key={type.key} className="border border-border rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-4">
-                      <span className="text-accent">{type.icon}</span>
-                      <h3 className="text-sm font-bold">{type.label}</h3>
-                      <span className="ml-auto text-[10px] text-text-secondary">{enabledCount}/{config.length}</span>
-                    </div>
-                    <div className="space-y-0">
-                      {config.map((item) => {
-                        const isOn = typeSettings[item.key] || false;
-                        return (
-                          <label key={item.key} className="flex items-center justify-between py-2 cursor-pointer select-none">
-                            <span className={`text-sm ${isOn ? 'text-text font-medium' : 'text-text-secondary'}`}>{item.label}</span>
-                            <ToggleSwitch
-                              checked={isOn}
-                              onChange={(val) => {
-                                const updated = { ...enhancements, [type.key]: { ...typeSettings, [item.key]: val } };
-                                setSettings({ enhancements: updated });
-                              }}
-                            />
-                          </label>
-                        );
-                      })}
-                    </div>
+                {settings.utmTemplate && (
+                  <div className="bg-bg rounded-lg p-2 mt-2">
+                    <p className="text-[11px] text-text break-all font-mono">
+                      https://example.com?{settings.utmTemplate}
+                    </p>
                   </div>
-                );
-              })}
+                )}
+              </div>
+
+              <div className="glass-card rounded-xl p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
+                  </svg>
+                  <h2 className="text-sm font-semibold">DSA (EU Digital Services Act)</h2>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1">Beneficiary</label>
+                    <input
+                      type="text"
+                      value={settings.dsaBeneficiary || ''}
+                      onChange={(e) => setSettings({ dsaBeneficiary: e.target.value })}
+                      className={inputCls}
+                      placeholder="Company or person name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1">Payor</label>
+                    <input
+                      type="text"
+                      value={settings.dsaPayor || ''}
+                      onChange={(e) => setSettings({ dsaPayor: e.target.value })}
+                      className={inputCls}
+                      placeholder="Who pays for the ads"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-text-tertiary mt-2">Auto-filled on every ad set targeting EU countries.</p>
+              </div>
+            </div>
+
+            {/* Right column: Advantage+ Enhancements */}
+            <div className="glass-card rounded-xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-semibold">Advantage+ Enhancements</h2>
+                <button
+                  type="button"
+                  onClick={() => setSettings({ enhancements: { image: {}, video: {}, carousel: {} } })}
+                  className="text-[11px] text-danger hover:text-danger/80 font-medium"
+                >
+                  Disable all
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                {[
+                  { key: 'image', label: 'Images', icon: <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg> },
+                  { key: 'video', label: 'Videos', icon: <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg> },
+                  { key: 'carousel', label: 'Carousel', icon: <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg> },
+                ].map((type) => {
+                  const enhancements = settings.enhancements || {};
+                  const typeSettings = enhancements[type.key] || {};
+                  const config = ENHANCEMENT_CONFIGS[type.key] || [];
+                  const enabledCount = config.filter((item) => typeSettings[item.key]).length;
+
+                  return (
+                    <div key={type.key}>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="text-accent">{type.icon}</span>
+                        <h3 className="text-xs font-bold">{type.label}</h3>
+                        <span className="ml-auto text-[10px] text-text-tertiary">{enabledCount}/{config.length}</span>
+                      </div>
+                      <div>
+                        {config.map((item) => {
+                          const isOn = typeSettings[item.key] || false;
+                          return (
+                            <label key={item.key} className="flex items-center justify-between py-1.5 cursor-pointer select-none">
+                              <span className={`text-[12px] ${isOn ? 'text-text font-medium' : 'text-text-secondary'}`}>{item.label}</span>
+                              <ToggleSwitch
+                                checked={isOn}
+                                onChange={(val) => {
+                                  const updated = { ...enhancements, [type.key]: { ...typeSettings, [item.key]: val } };
+                                  setSettings({ enhancements: updated });
+                                }}
+                              />
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}

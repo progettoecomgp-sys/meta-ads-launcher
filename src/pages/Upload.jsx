@@ -1295,7 +1295,7 @@ export default function Upload() {
       )}
 
       {/* ═══ Top Toolbar ═══ */}
-      <div className="mb-5 flex items-center gap-2 flex-wrap">
+      <div className="mb-5 flex items-center gap-2 flex-wrap relative z-30">
         {/* Ad Account selector */}
         {adAccounts.length > 0 && (
           <AdAccountBar adAccounts={adAccounts} settings={settings} setSettings={setSettings} />
